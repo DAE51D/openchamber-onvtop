@@ -4,3 +4,6 @@ node_modules/
 *.log
 .env
 .env.*
+.specstory/.gitignore
+.specstory/.project.json
+.specstory/cli/config.toml
