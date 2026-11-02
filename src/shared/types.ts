@@ -20,9 +20,48 @@ export type SysSample = {
   cpu: number | null; // %
 };
 
+export type LlmProcess = {
+  pid: number;
+  engine?: string;
+  name?: string;
+  user?: string;
+  model?: string | null;
+  alias?: string | null;
+  subcmd?: string | null;
+  ngl?: string | null;
+  ctx?: string | null;
+  parallel?: string | null;
+  port?: string | null;
+  argv?: string[];
+  gpu_pct?: number | null;
+  vram_kb?: number | null;
+  cpu_pct?: number | null;
+  rss_kb?: number | null;
+  threads?: number | null;
+};
+
+export type OllamaModel = {
+  name: string;
+  model?: string | null;
+  size?: number | null;
+  size_vram?: number | null;
+  quantization?: string | null;
+  parameter_size?: string | null;
+};
+
+export type LlmSample = {
+  llama: LlmProcess[];
+  ollama: LlmProcess[];
+  vllm: LlmProcess[];
+  sglang: LlmProcess[];
+  tgi: LlmProcess[];
+  ollama_models: OllamaModel[];
+};
+
 export type Sample = {
   gpu: GpuSample;
   sys: SysSample;
+  llm: LlmSample;
 };
 
 export type HistorySeries = {

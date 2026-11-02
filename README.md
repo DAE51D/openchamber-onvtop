@@ -8,6 +8,8 @@ For those using local LLM, the [original nvtop CLI](https://github.com/syllo/nvt
 
 GPU-focused OpenChamber rail panel and compact Work Status graph, powered by the standalone [nvstats-service](https://github.com/DAE51D/nvstats-service) daemon.
 
+The panel now includes read-only per-model cards for detected local inference processes, with process CPU/GPU/memory metrics and parsed launch flags where available. It does not expose process kill or restart controls.
+
 The panel shows GPU utilization, shared GTT memory, temperature, power, CPU and system RAM. Its graph plots GPU utilization, GTT, temperature, power and CPU; system RAM is shown separately and is never presented as GPU RAM. Click a graph-backed card or legend label to toggle its line. Visibility preferences are saved and shared with the Work Status graph.
 
 **onvtop also accurately shows the GPU RAM in the new shared CPU/GPU systems. Unlike many of the other system resource extensions out there, that would show only 2 GB for VRAM, this will correctly show 78 GB (for example).**
@@ -25,7 +27,11 @@ The panel shows GPU utilization, shared GTT memory, temperature, power, CPU and 
 
 onvtop reads the latest `com.daevid.nvstats.Sample.Get()` sample from the daemon user's D-Bus session. It does not poll GPU tools or duplicate the daemon's sampling.
 
+Model cards are currently built from lightweight Linux process-argument detection for llama.cpp, Ollama, vLLM, SGLang, and Hugging Face TGI. Desktop clients are not listed as model processes. Per-model CPU/GPU counters are shown only when the runtime exposes them; Ollama model cards use Ollama's loaded-model API data.
+
 ## Install the shared daemon
+
+For an AI-assisted installation, point your coding agent at the [onvtop install skill](SKILL.md). It covers the shared daemon and extension setup without assuming a particular Linux username.
 
 ```sh
 git clone https://github.com/DAE51D/nvstats-service.git

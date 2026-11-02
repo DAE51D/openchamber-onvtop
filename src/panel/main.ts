@@ -2,6 +2,7 @@ import { connectHost } from '@openchamber/sdk';
 import { applyHostReady } from '@openchamber/sdk/ui';
 
 import { COLORS } from '../shared/colors.ts';
+import { collectLlmCards, displayFlags, engineLabel, type LlmCard } from '../shared/llm.ts';
 import { type HistorySeries, type Sample, type Stats, HISTORY_LENGTH } from '../shared/types.ts';
 import {
   parseSeriesVisibility,
@@ -165,6 +166,24 @@ h2 {
   color: #ef4444;
   font-size: 12px;
 }
+.llm-section[hidden] { display: none; }
+.llm-list { display: flex; flex-direction: column; gap: 8px; }
+.llm-card {
+  --engine-color: var(--oc-primary);
+  min-width: 0;
+  padding: 9px;
+  background: color-mix(in srgb, var(--oc-fg) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--engine-color) 65%, transparent);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--engine-color) 7%, transparent);
+}
+.llm-title { color: var(--engine-color); font-weight: 650; overflow-wrap: anywhere; }
+.llm-stats, .llm-meta { color: var(--oc-muted); font-size: 11px; overflow-wrap: anywhere; }
+.llm-flags { display: flex; flex-wrap: wrap; gap: 3px 8px; margin-top: 5px; }
+.llm-flag { max-width: 100%; overflow-wrap: anywhere; font: 10px/1.35 var(--oc-mono, monospace); }
+.llm-flag-key { color: var(--oc-muted); }
+.llm-flag-value { color: var(--oc-fg); }
+.llm-empty { color: var(--oc-muted); font-size: 11px; }
 `;
 
 const style = document.createElement('style');
@@ -395,8 +414,135 @@ chartSection.innerHTML = `
   </div>
 `;
 
+const llmSection = document.createElement('section');
+llmSection.className = 'section llm-section';
+const llmHeading = document.createElement('h2');
+llmHeading.textContent = 'LLM processes';
+const llmList = document.createElement('div');
+llmList.className = 'llm-list';
+llmSection.append(llmHeading, llmList);
+
 // ----- Load -----
-root.append(statusRow, statsRow, memDetail, chartSection);
+root.append(statusRow, statsRow, memDetail, chartSection, llmSection);
+
+type LlmCardView = {
+  element: HTMLElement;
+  title: HTMLElement;
+  stats: HTMLElement;
+  meta: HTMLElement;
+  flags: HTMLElement;
+  flagsSignature: string;
+};
+
+const llmCardViews = new Map<string, LlmCardView>();
+const ENGINE_COLORS: Record<LlmCard['engine'], string> = {
+  llama: COLORS.util,
+  ollama: COLORS.mem,
+  vllm: COLORS.temp,
+  sglang: COLORS.power,
+  tgi: COLORS.cpu,
+};
+
+const processPercent = (value: number | null | undefined): string =>
+  value === null || value === undefined ? 'N/A' : `${value.toFixed(0)}%`;
+
+const processMiB = (value: number | null | undefined): string =>
+  value === null || value === undefined ? 'N/A' : `${(value / 1024).toFixed(0)} MiB`;
+
+function makeLlmCardView(): LlmCardView {
+  const element = document.createElement('article');
+  element.className = 'llm-card';
+  const title = document.createElement('div');
+  title.className = 'llm-title';
+  const stats = document.createElement('div');
+  stats.className = 'llm-stats';
+  const meta = document.createElement('div');
+  meta.className = 'llm-meta';
+  const flags = document.createElement('div');
+  flags.className = 'llm-flags';
+  element.append(title, stats, meta, flags);
+  return { element, title, stats, meta, flags, flagsSignature: '' };
+}
+
+function cardMeta(card: LlmCard): string {
+  const process = card.process;
+  if (!process) {
+    const model = card.ollamaModel;
+    if (!model) return '';
+    return [
+      model.parameter_size && `parameters: ${model.parameter_size}`,
+      model.quantization && `quant: ${model.quantization}`,
+    ].filter(Boolean).join('   ·   ');
+  }
+  return [
+    process.user && `user: ${process.user}`,
+    process.ngl && `ngl: ${process.ngl}`,
+    process.ctx && `ctx: ${process.ctx}`,
+    process.parallel && `parallel: ${process.parallel}`,
+    process.threads && `threads: ${process.threads}`,
+    process.port && `port: ${process.port}`,
+    `pid: ${process.pid}`,
+  ].filter(Boolean).join('   ·   ');
+}
+
+function updateLlmCard(view: LlmCardView, card: LlmCard): void {
+  view.element.style.setProperty('--engine-color', ENGINE_COLORS[card.engine]);
+  view.title.textContent = `${engineLabel(card.engine)}  [${card.title}]`;
+
+  if (card.process) {
+    const process = card.process;
+    view.stats.textContent = `GPU (proc): ${processPercent(process.gpu_pct)}   GPU MEM (proc): ${processMiB(process.vram_kb)}   CPU: ${processPercent(process.cpu_pct)}   RSS: ${processMiB(process.rss_kb)}`;
+  } else if (card.ollamaModel) {
+    const model = card.ollamaModel;
+    const size = model.size ? formatBytes(model.size) : 'N/A';
+    const vram = model.size_vram ? formatBytes(model.size_vram) : 'N/A';
+    view.stats.textContent = `Model size: ${size}   GPU memory: ${vram}`;
+  }
+
+  view.meta.textContent = cardMeta(card);
+  const argv = card.process?.argv ?? [];
+  const flags = displayFlags(argv);
+  const signature = JSON.stringify(flags);
+  if (signature !== view.flagsSignature) {
+    view.flags.replaceChildren();
+    for (const flag of flags) {
+      const item = document.createElement('span');
+      item.className = 'llm-flag';
+      const key = document.createElement('span');
+      key.className = 'llm-flag-key';
+      key.textContent = `${flag.key}: `;
+      const value = document.createElement('span');
+      value.className = 'llm-flag-value';
+      value.textContent = flag.value || 'on';
+      item.append(key, value);
+      view.flags.append(item);
+    }
+    view.flagsSignature = signature;
+  }
+}
+
+function updateLlmCards(llm: Sample['llm']): void {
+  const cards = collectLlmCards(llm);
+  llmSection.hidden = cards.length === 0;
+  const activeKeys = new Set(cards.map(({ key }) => key));
+
+  for (const [key, view] of llmCardViews) {
+    if (activeKeys.has(key)) continue;
+    view.element.remove();
+    llmCardViews.delete(key);
+  }
+
+  cards.forEach((card, index) => {
+    let view = llmCardViews.get(card.key);
+    if (!view) {
+      view = makeLlmCardView();
+      llmCardViews.set(card.key, view);
+    }
+    updateLlmCard(view, card);
+    const childAtIndex = llmList.children.item(index);
+    if (childAtIndex !== view.element) llmList.insertBefore(view.element, childAtIndex);
+  });
+}
 
 function syncSeriesControls(): void {
   for (const control of Array.from(root!.querySelectorAll<HTMLButtonElement>('[data-series]'))) {
@@ -424,6 +570,7 @@ syncSeriesControls();
 
 function updateUI(stats: Stats): void {
   const { gpu, sys } = stats.sample;
+  updateLlmCards(stats.sample.llm);
 
   if (!stats.sourceAvailable) {
     statusDot.className = 'status-dot error';

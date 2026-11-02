@@ -54,7 +54,20 @@ async function fetchSample(): Promise<Sample | null> {
     if (!data.gpu || !data.sys) {
       throw new Error('malformed nvstats response');
     }
-    return { gpu: data.gpu, sys: data.sys } as Sample;
+    const rawLlm = data.llm ?? {};
+    const list = (key: string) => Array.isArray(rawLlm[key]) ? rawLlm[key] : [];
+    return {
+      gpu: data.gpu,
+      sys: data.sys,
+      llm: {
+        llama: list('llama'),
+        ollama: list('ollama'),
+        vllm: list('vllm'),
+        sglang: list('sglang'),
+        tgi: list('tgi'),
+        ollama_models: list('ollama_models'),
+      },
+    } as Sample;
   } catch (e) {
     return null;
   }
@@ -111,6 +124,7 @@ const server = http.createServer((req, res) => {
       sample: lastSample ?? {
         gpu: { util: null, mem_used: null, mem_total: null, temp: null, power_w: null, power_cap_w: null },
         sys: { ram_used: 0, ram_total: 0, swap_used: 0, swap_total: 0, load1: 0, load5: 0, load15: 0, cpu: null },
+        llm: { llama: [], ollama: [], vllm: [], sglang: [], tgi: [], ollama_models: [] },
       },
       history,
       timestamp: lastTimestamp,
