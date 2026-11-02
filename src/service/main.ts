@@ -1,0 +1,134 @@
+// Extension service: reads knvtop's D-Bus sample, maintains history, serves /stats.
+import http from 'node:http';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+import { type HistorySeries, type Sample, type Stats, HISTORY_LENGTH, SAMPLE_INTERVAL_MS } from '../shared/types.ts';
+import { percentOf, powerPercent } from '../shared/series.ts';
+
+const execFileAsync = promisify(execFile);
+const port = Number(process.env.OPENCHAMBER_SERVICE_PORT);
+const token = process.env.OPENCHAMBER_SERVICE_TOKEN ?? '';
+if (!port || !token) {
+  console.error('OPENCHAMBER_SERVICE_PORT and OPENCHAMBER_SERVICE_TOKEN are required');
+  process.exit(1);
+}
+
+// Rolling history buffers
+const history: HistorySeries = {
+  util: [],
+  mem: [],
+  temp: [],
+  power: [],
+  cpu: [],
+};
+
+let lastSample: Sample | null = null;
+let lastTimestamp = 0;
+let errorCount = 0;
+let lastError = '';
+
+function push(series: (number | null)[], value: number | null) {
+  series.push(value);
+  while (series.length > HISTORY_LENGTH) {
+    series.shift();
+  }
+}
+
+async function fetchSample(): Promise<Sample | null> {
+  try {
+    const uid = process.getuid?.();
+    if (uid === undefined) throw new Error('knvtop D-Bus requires a Linux user session');
+    const { stdout } = await execFileAsync('busctl', [
+      `--address=unix:path=/run/user/${uid}/bus`,
+      'call',
+      'com.daevid.knvtop',
+      '/com/daevid/knvtop',
+      'com.daevid.knvtop.Sample',
+      'Get',
+    ], { timeout: 5000, maxBuffer: 1024 * 1024 });
+    // busctl prints the D-Bus string as a C-escaped quoted string after `s `.
+    const encoded = stdout.trim().replace(/^s\s+/, '');
+    const data = JSON.parse(JSON.parse(encoded));
+    if (!data.gpu || !data.sys) {
+      throw new Error('malformed knvtop response');
+    }
+    return { gpu: data.gpu, sys: data.sys } as Sample;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function tick() {
+  const sample = await fetchSample();
+  if (sample) {
+    errorCount = 0;
+    lastError = '';
+    lastSample = sample;
+    lastTimestamp = Date.now();
+
+    // Compute derived values for history
+    const memPct = percentOf(sample.gpu.mem_used, sample.gpu.mem_total);
+    push(history.util, sample.gpu.util);
+    push(history.mem, memPct);
+    push(history.temp, sample.gpu.temp);
+    const powerPct = powerPercent(sample.gpu.power_w, sample.gpu.power_cap_w);
+    push(history.power, powerPct);
+    push(history.cpu, sample.sys.cpu);
+  } else {
+    errorCount++;
+    lastError = 'failed to fetch from knvtop';
+    // Push nulls to keep time alignment
+    push(history.util, null);
+    push(history.mem, null);
+    push(history.temp, null);
+    push(history.power, null);
+    push(history.cpu, null);
+  }
+}
+
+const send = (res: http.ServerResponse, status: number, body: object) => {
+  const json = JSON.stringify(body);
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(json);
+};
+
+const server = http.createServer((req, res) => {
+  if (req.headers.authorization !== `Bearer ${token}`) {
+    send(res, 401, { error: 'unauthorized' });
+    return;
+  }
+  const { pathname } = new URL(req.url ?? '/', 'http://127.0.0.1');
+  if (pathname === '/health') {
+    send(res, 200, { ok: true });
+    return;
+  }
+  if (pathname === '/stats' && req.method === 'GET') {
+    const stats: Stats = {
+      sample: lastSample ?? {
+        gpu: { util: null, mem_used: null, mem_total: null, temp: null, power_w: null, power_cap_w: null },
+        sys: { ram_used: 0, ram_total: 0, swap_used: 0, swap_total: 0, load1: 0, load5: 0, load15: 0, cpu: null },
+      },
+      history,
+      timestamp: lastTimestamp,
+    };
+    send(res, 200, stats);
+    return;
+  }
+  send(res, 404, { error: 'not-found' });
+});
+
+// Start polling
+tick().then(() => {
+  setInterval(tick, SAMPLE_INTERVAL_MS);
+});
+
+const shutdown = () => {
+  server.close();
+  process.exit(0);
+};
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+server.listen(port, '127.0.0.1');
+console.log(`onvtop service listening on 127.0.0.1:${port}, reading knvtop over D-Bus`);

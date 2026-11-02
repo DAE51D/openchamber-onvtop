@@ -1,0 +1,52 @@
+{
+  "name": "openchamber-onvtop",
+  "version": "1.0.0",
+  "description": "GPU-focused system monitor for OpenChamber, powered by the knvtop D-Bus service — utilization, GTT memory, temperature, power, and multi-line sparklines",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DAE51D/openchamber-onvtop.git"
+  },
+  "openchamber": {
+    "apiVersion": 1,
+    "engines": {
+      "openchamber": ">=2.0.1"
+    },
+    "contributes": {
+      "panel": {
+        "id": "onvtop",
+        "name": "onvtop",
+        "icon": "pulse",
+        "entry": "panel/index.html"
+      },
+      "statusSection": {
+        "entry": "status/index.html",
+        "title": "GPU · onvtop",
+        "height": 68,
+        "defaultExpanded": true
+      },
+      "service": {
+        "entry": "service/main.js",
+        "runtime": "host",
+        "permissions": {
+          "exec": ["busctl"]
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "bun run scripts/build.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src",
+    "check": "bun run typecheck && bun run test && bun run build",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "@openchamber/sdk": "^2.0.1",
+    "@types/bun": "^1.4.2",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2"
+  }
+}
