@@ -1,4 +1,4 @@
-// Extension service: reads knvtop's D-Bus sample, maintains history, serves /stats.
+// Extension service: reads the nvstats D-Bus sample, maintains history, serves /stats.
 import http from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -26,7 +26,7 @@ const history: HistorySeries = {
 let lastSample: Sample | null = null;
 let lastTimestamp = 0;
 let errorCount = 0;
-let lastError = 'waiting for knvtop-service';
+let lastError = 'waiting for nvstats-service';
 let sourceAvailable = false;
 
 function push(series: (number | null)[], value: number | null) {
@@ -39,20 +39,20 @@ function push(series: (number | null)[], value: number | null) {
 async function fetchSample(): Promise<Sample | null> {
   try {
     const uid = process.getuid?.();
-    if (uid === undefined) throw new Error('knvtop D-Bus requires a Linux user session');
+    if (uid === undefined) throw new Error('nvstats D-Bus requires a Linux user session');
     const { stdout } = await execFileAsync('busctl', [
       `--address=unix:path=/run/user/${uid}/bus`,
       'call',
-      'com.daevid.knvtop',
-      '/com/daevid/knvtop',
-      'com.daevid.knvtop.Sample',
+      'com.daevid.nvstats',
+      '/com/daevid/nvstats',
+      'com.daevid.nvstats.Sample',
       'Get',
     ], { timeout: 5000, maxBuffer: 1024 * 1024 });
     // busctl prints the D-Bus string as a C-escaped quoted string after `s `.
     const encoded = stdout.trim().replace(/^s\s+/, '');
     const data = JSON.parse(JSON.parse(encoded));
     if (!data.gpu || !data.sys) {
-      throw new Error('malformed knvtop response');
+      throw new Error('malformed nvstats response');
     }
     return { gpu: data.gpu, sys: data.sys } as Sample;
   } catch (e) {
@@ -79,7 +79,7 @@ async function tick() {
     push(history.cpu, sample.sys.cpu);
   } else {
     errorCount++;
-    lastError = 'knvtop-service is unavailable';
+    lastError = 'nvstats-service is unavailable';
     sourceAvailable = false;
     // Push nulls to keep time alignment
     push(history.util, null);
@@ -135,4 +135,4 @@ process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
 server.listen(port, '127.0.0.1');
-console.log(`onvtop service listening on 127.0.0.1:${port}, reading knvtop over D-Bus`);
+console.log(`onvtop service listening on 127.0.0.1:${port}, reading nvstats over D-Bus`);

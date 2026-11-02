@@ -71,7 +71,7 @@ const poll = async (): Promise<void> => {
     if (result.status !== 200) throw new Error('service unavailable');
     const stats = JSON.parse(result.body) as Stats;
     if (!stats.sourceAvailable) {
-      summary.textContent = 'knvtop-service unavailable · see onvtop README to install';
+      summary.textContent = 'nvstats-service unavailable · see onvtop README to install';
       svg.replaceChildren();
       return;
     }

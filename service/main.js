@@ -29,7 +29,7 @@ var history = {
 var lastSample = null;
 var lastTimestamp = 0;
 var errorCount = 0;
-var lastError = "waiting for knvtop-service";
+var lastError = "waiting for nvstats-service";
 var sourceAvailable = false;
 function push(series, value) {
   series.push(value);
@@ -41,19 +41,19 @@ async function fetchSample() {
   try {
     const uid = process.getuid?.();
     if (uid === undefined)
-      throw new Error("knvtop D-Bus requires a Linux user session");
+      throw new Error("nvstats D-Bus requires a Linux user session");
     const { stdout } = await execFileAsync("busctl", [
       `--address=unix:path=/run/user/${uid}/bus`,
       "call",
-      "com.daevid.knvtop",
-      "/com/daevid/knvtop",
-      "com.daevid.knvtop.Sample",
+      "com.daevid.nvstats",
+      "/com/daevid/nvstats",
+      "com.daevid.nvstats.Sample",
       "Get"
     ], { timeout: 5000, maxBuffer: 1024 * 1024 });
     const encoded = stdout.trim().replace(/^s\s+/, "");
     const data = JSON.parse(JSON.parse(encoded));
     if (!data.gpu || !data.sys) {
-      throw new Error("malformed knvtop response");
+      throw new Error("malformed nvstats response");
     }
     return { gpu: data.gpu, sys: data.sys };
   } catch (e) {
@@ -77,7 +77,7 @@ async function tick() {
     push(history.cpu, sample.sys.cpu);
   } else {
     errorCount++;
-    lastError = "knvtop-service is unavailable";
+    lastError = "nvstats-service is unavailable";
     sourceAvailable = false;
     push(history.util, null);
     push(history.mem, null);
@@ -126,4 +126,4 @@ var shutdown = () => {
 process.on("SIGTERM", shutdown);
 process.on("SIGINT", shutdown);
 server.listen(port, "127.0.0.1");
-console.log(`onvtop service listening on 127.0.0.1:${port}, reading knvtop over D-Bus`);
+console.log(`onvtop service listening on 127.0.0.1:${port}, reading nvstats over D-Bus`);

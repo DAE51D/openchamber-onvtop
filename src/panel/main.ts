@@ -427,7 +427,7 @@ function updateUI(stats: Stats): void {
 
   if (!stats.sourceAvailable) {
     statusDot.className = 'status-dot error';
-    statusText.textContent = 'knvtop-service unavailable';
+    statusText.textContent = 'nvstats-service unavailable';
     drawChart(stats.history, seriesVisibility);
     hasError = true;
     return;
@@ -466,7 +466,7 @@ function updateUI(stats: Stats): void {
 
 function updateError(): void {
   statusDot.className = 'status-dot error';
-  statusText.textContent = 'No data from knvtop';
+  statusText.textContent = 'No data from nvstats-service';
   hasError = true;
 }
 

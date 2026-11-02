@@ -1,7 +1,7 @@
 {
   "name": "openchamber-onvtop",
   "version": "1.1.0",
-  "description": "GPU-focused system monitor for OpenChamber, powered by the knvtop D-Bus service — utilization, GTT memory, temperature, power, and multi-line sparklines",
+  "description": "GPU-focused system monitor for OpenChamber, powered by the nvstats D-Bus service — utilization, GTT memory, temperature, power, and multi-line sparklines",
   "private": true,
   "type": "module",
   "license": "MIT",

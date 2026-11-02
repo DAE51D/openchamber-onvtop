@@ -1,14 +1,14 @@
 # onvtop
 
-GPU-focused OpenChamber rail panel and compact Work Status graph, powered by the standalone [knvtop-service](https://github.com/DAE51D/knvtop-service) daemon.
+GPU-focused OpenChamber rail panel and compact Work Status graph, powered by the standalone [nvstats-service](https://github.com/DAE51D/nvstats-service) daemon.
 
-onvtop reads the latest `com.daevid.knvtop.Sample.Get()` sample from the daemon user's D-Bus session. It does not poll GPU tools or duplicate the daemon's sampling. The panel shows GPU utilization, shared GTT memory, temperature, power, CPU and system RAM. Its graph plots GPU utilization, GTT, temperature, power and CPU; system RAM is shown separately and is never presented as GPU RAM. Click a graph-backed card or legend label to toggle its line. Visibility preferences are saved and shared with the Work Status graph.
+onvtop reads the latest `com.daevid.nvstats.Sample.Get()` sample from the daemon user's D-Bus session. It does not poll GPU tools or duplicate the daemon's sampling. The panel shows GPU utilization, shared GTT memory, temperature, power, CPU and system RAM. Its graph plots GPU utilization, GTT, temperature, power and CPU; system RAM is shown separately and is never presented as GPU RAM. Click a graph-backed card or legend label to toggle its line. Visibility preferences are saved and shared with the Work Status graph.
 
 knvtop reports GTT in MiB and system RAM in bytes; onvtop converts both to GiB for display.
 
 ## Requirements
 
-- Linux host with `knvtop-service` installed and running for the same user as the OpenChamber host service.
+- Linux host with `nvstats-service` installed and running for the same user as the OpenChamber host service.
 - `busctl` available on `PATH` (provided by systemd on typical Linux distributions).
 
 You do **not** need to install the knvtop Plasma widget. Install the shared daemon once; both knvtop and onvtop can use it. A web/server OpenChamber instance running under a different account cannot read another user's D-Bus session, so install the daemon for the account that runs that OpenChamber server.
@@ -16,12 +16,12 @@ You do **not** need to install the knvtop Plasma widget. Install the shared daem
 ## Install the shared daemon
 
 ```sh
-git clone https://github.com/DAE51D/knvtop-service.git
-cd knvtop-service
+git clone https://github.com/DAE51D/nvstats-service.git
+cd nvstats-service
 ./install.sh
 ```
 
-The installer checks for Python D-Bus/GLib bindings, installs the user service, and starts it. See the [knvtop-service README](https://github.com/DAE51D/knvtop-service#install) for distro dependencies and optional cross-user GPU process statistics.
+The installer checks for Python D-Bus/GLib bindings, installs the user service, and starts it. See the [nvstats-service README](https://github.com/DAE51D/nvstats-service#install) for distro dependencies and optional cross-user GPU process statistics.
 
 ## Install from GitHub
 
@@ -46,7 +46,7 @@ bun install
 bun run check
 ```
 
-To smoke-test against a live knvtop-service daemon on the current session bus:
+To smoke-test against a live nvstats-service daemon on the current session bus:
 
 ```sh
 bun run smoke
