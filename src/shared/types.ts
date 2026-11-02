@@ -37,6 +37,7 @@ export type Stats = {
   sample: Sample;
   history: HistorySeries;
   timestamp: number;
+  sourceAvailable: boolean;
 };
 
 export const HISTORY_LENGTH = 21; // match knvtop's 21-point graph window

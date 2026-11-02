@@ -29,7 +29,8 @@ var history = {
 var lastSample = null;
 var lastTimestamp = 0;
 var errorCount = 0;
-var lastError = "";
+var lastError = "waiting for knvtop-service";
+var sourceAvailable = false;
 function push(series, value) {
   series.push(value);
   while (series.length > HISTORY_LENGTH) {
@@ -64,6 +65,7 @@ async function tick() {
   if (sample) {
     errorCount = 0;
     lastError = "";
+    sourceAvailable = true;
     lastSample = sample;
     lastTimestamp = Date.now();
     const memPct = percentOf(sample.gpu.mem_used, sample.gpu.mem_total);
@@ -75,7 +77,8 @@ async function tick() {
     push(history.cpu, sample.sys.cpu);
   } else {
     errorCount++;
-    lastError = "failed to fetch from knvtop";
+    lastError = "knvtop-service is unavailable";
+    sourceAvailable = false;
     push(history.util, null);
     push(history.mem, null);
     push(history.temp, null);
@@ -95,7 +98,7 @@ var server = http.createServer((req, res) => {
   }
   const { pathname } = new URL(req.url ?? "/", "http://127.0.0.1");
   if (pathname === "/health") {
-    send(res, 200, { ok: true });
+    send(res, sourceAvailable ? 200 : 503, { ok: sourceAvailable, error: sourceAvailable ? null : lastError });
     return;
   }
   if (pathname === "/stats" && req.method === "GET") {
@@ -105,7 +108,8 @@ var server = http.createServer((req, res) => {
         sys: { ram_used: 0, ram_total: 0, swap_used: 0, swap_total: 0, load1: 0, load5: 0, load15: 0, cpu: null }
       },
       history,
-      timestamp: lastTimestamp
+      timestamp: lastTimestamp,
+      sourceAvailable
     };
     send(res, 200, stats);
     return;

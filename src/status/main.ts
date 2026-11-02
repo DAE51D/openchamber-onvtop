@@ -70,6 +70,11 @@ const poll = async (): Promise<void> => {
     const result = await host.serviceRequest({ method: 'GET', path: '/stats' });
     if (result.status !== 200) throw new Error('service unavailable');
     const stats = JSON.parse(result.body) as Stats;
+    if (!stats.sourceAvailable) {
+      summary.textContent = 'knvtop-service unavailable · see onvtop README to install';
+      svg.replaceChildren();
+      return;
+    }
     const { gpu, sys } = stats.sample;
     const memUsed = gpu.mem_used === null ? '—' : (gpu.mem_used / 1024).toFixed(1);
     const memTotal = gpu.mem_total === null ? '—' : (gpu.mem_total / 1024).toFixed(1);

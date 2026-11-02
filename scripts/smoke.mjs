@@ -26,18 +26,20 @@ service.stderr.setEncoding('utf8').on('data', (text) => { stderr += text; });
 
 try {
   const deadline = Date.now() + 10_000;
-  let response;
+  let stats;
   while (Date.now() < deadline) {
     try {
-      response = await fetch(`http://127.0.0.1:${port}/stats`, {
+      const response = await fetch(`http://127.0.0.1:${port}/stats`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (response.ok) break;
+      if (response.ok) {
+        stats = await response.json();
+        if (stats.sourceAvailable) break;
+      }
     } catch {}
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
-  if (!response?.ok) throw new Error(`Service did not become ready. ${stderr}`);
-  const stats = await response.json();
+  if (!stats?.sourceAvailable) throw new Error(`knvtop-service D-Bus source did not become available. ${stderr}`);
   if (!stats.sample?.gpu || !stats.sample?.sys) throw new Error('Missing GPU/system sample');
   if (!Array.isArray(stats.history?.mem) || 'ram' in stats.history) throw new Error('History must graph GTT memory, not system RAM');
   if (stats.sample.gpu.mem_total < 10_000) throw new Error('Expected shared GTT memory, got a dedicated-VRAM-sized total');

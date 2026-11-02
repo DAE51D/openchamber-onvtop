@@ -26,7 +26,8 @@ const history: HistorySeries = {
 let lastSample: Sample | null = null;
 let lastTimestamp = 0;
 let errorCount = 0;
-let lastError = '';
+let lastError = 'waiting for knvtop-service';
+let sourceAvailable = false;
 
 function push(series: (number | null)[], value: number | null) {
   series.push(value);
@@ -64,6 +65,7 @@ async function tick() {
   if (sample) {
     errorCount = 0;
     lastError = '';
+    sourceAvailable = true;
     lastSample = sample;
     lastTimestamp = Date.now();
 
@@ -77,7 +79,8 @@ async function tick() {
     push(history.cpu, sample.sys.cpu);
   } else {
     errorCount++;
-    lastError = 'failed to fetch from knvtop';
+    lastError = 'knvtop-service is unavailable';
+    sourceAvailable = false;
     // Push nulls to keep time alignment
     push(history.util, null);
     push(history.mem, null);
@@ -100,7 +103,7 @@ const server = http.createServer((req, res) => {
   }
   const { pathname } = new URL(req.url ?? '/', 'http://127.0.0.1');
   if (pathname === '/health') {
-    send(res, 200, { ok: true });
+    send(res, sourceAvailable ? 200 : 503, { ok: sourceAvailable, error: sourceAvailable ? null : lastError });
     return;
   }
   if (pathname === '/stats' && req.method === 'GET') {
@@ -111,6 +114,7 @@ const server = http.createServer((req, res) => {
       },
       history,
       timestamp: lastTimestamp,
+      sourceAvailable,
     };
     send(res, 200, stats);
     return;

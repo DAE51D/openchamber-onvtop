@@ -425,6 +425,14 @@ syncSeriesControls();
 function updateUI(stats: Stats): void {
   const { gpu, sys } = stats.sample;
 
+  if (!stats.sourceAvailable) {
+    statusDot.className = 'status-dot error';
+    statusText.textContent = 'knvtop-service unavailable';
+    drawChart(stats.history, seriesVisibility);
+    hasError = true;
+    return;
+  }
+
   // Update stat cards
   statUtil.querySelector('.stat-value')!.textContent = formatPercent(gpu.util);
   statTemp.querySelector('.stat-value')!.textContent = formatTemp(gpu.temp);
