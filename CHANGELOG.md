@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — 2026-11-02
 
-- Show read-only model cards with per-process CPU/GPU/memory stats and launch flags for supported inference engines.
-- Add lightweight process detection for SGLang and Hugging Face TGI; improve vLLM launch-form detection.
-- Document AI-assisted installation with a repository `SKILL.md`.
+- Add read-only model cards with per-process CPU/GPU/memory statistics and launch flags where available.
+- Detect SGLang and Hugging Face TGI, and recognize vLLM's CLI and Python-module launch forms.
+- Redact values of common credential-bearing flags in displayed arguments.
+- Add the repository install skill and document agent-assisted setup.
 
 ## 1.1.0 — 2026-11-02
 
