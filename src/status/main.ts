@@ -4,6 +4,7 @@ import { applyHostReady } from '@openchamber/sdk/ui';
 import { COLORS } from '../shared/colors.ts';
 import { type HistorySeries, type Stats, SAMPLE_INTERVAL_MS } from '../shared/types.ts';
 import { parseSeriesVisibility, SERIES_VISIBILITY_STORAGE_KEY, type SeriesKey, type SeriesVisibility } from '../shared/series.ts';
+import { parseSourceConfig, serviceSource, SOURCE_CONFIG_STORAGE_KEY } from '../shared/sources.ts';
 
 const host = connectHost();
 const root = document.querySelector<HTMLElement>('#root');
@@ -23,7 +24,7 @@ document.head.append(style);
 
 const summary = document.createElement('div');
 summary.className = 'summary';
-summary.textContent = 'Waiting for knvtop…';
+summary.textContent = 'Waiting for nvstats-service…';
 const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 svg.setAttribute('viewBox', '0 0 300 48');
 svg.setAttribute('preserveAspectRatio', 'none');
@@ -71,7 +72,7 @@ const poll = async (): Promise<void> => {
     if (result.status !== 200) throw new Error('service unavailable');
     const stats = JSON.parse(result.body) as Stats;
     if (!stats.sourceAvailable) {
-      summary.textContent = 'nvstats-service unavailable · see onvtop README to install';
+      summary.textContent = `${stats.sourceLabel || 'nvstats-service'} unavailable${stats.sourceError ? ` · ${stats.sourceError}` : ''}`;
       svg.replaceChildren();
       return;
     }
@@ -82,10 +83,11 @@ const poll = async (): Promise<void> => {
     const ramTotal = (sys.ram_total / 1073741824).toFixed(1);
     const temp = gpu.temp === null ? '—' : `${Math.round(gpu.temp)}°C`;
     const power = gpu.power_w === null ? '—' : `${Math.round(gpu.power_w)}W`;
-    summary.textContent = `GPU ${formatPercent(gpu.util)} · GTT ${memUsed}/${memTotal} GiB · RAM ${ramUsed}/${ramTotal} GiB · ${temp} · ${power} · CPU ${formatPercent(sys.cpu)}`;
+    const sourcePrefix = stats.sourceLabel && stats.sourceLabel !== 'Local D-Bus' ? `${stats.sourceLabel} · ` : '';
+    summary.textContent = `${sourcePrefix}GPU ${formatPercent(gpu.util)} · GTT ${memUsed}/${memTotal} GiB · RAM ${ramUsed}/${ramTotal} GiB · ${temp} · ${power} · CPU ${formatPercent(sys.cpu)}`;
     renderChart(stats.history);
   } catch {
-    summary.textContent = 'knvtop unavailable';
+    summary.textContent = 'nvstats-service unavailable';
     svg.replaceChildren();
   }
 };
@@ -109,6 +111,17 @@ host.onReady((context) => {
       seriesVisibility = parseSeriesVisibility(await host.storage.get(SERIES_VISIBILITY_STORAGE_KEY));
     } catch (error) {
       console.warn('Could not load onvtop graph visibility', error);
+    }
+    try {
+      const sourceConfig = parseSourceConfig(await host.storage.get(SOURCE_CONFIG_STORAGE_KEY));
+      const result = await host.serviceRequest({
+        method: 'POST',
+        path: '/source',
+        body: JSON.stringify(serviceSource(sourceConfig)),
+      });
+      if (result.status !== 200) throw new Error('Could not apply telemetry source');
+    } catch (error) {
+      console.warn('Could not load onvtop source configuration', error);
     }
     host.setHeight(68);
     start();

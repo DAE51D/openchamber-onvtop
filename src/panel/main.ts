@@ -11,6 +11,15 @@ import {
   type SeriesKey,
   type SeriesVisibility,
 } from '../shared/series.ts';
+import {
+  LOCAL_SOURCE_ID,
+  normalizeRemoteHost,
+  parseSourceConfig,
+  serviceSource,
+  SOURCE_CONFIG_STORAGE_KEY,
+  type RemoteSource,
+  type SourceConfig,
+} from '../shared/sources.ts';
 
 const host = connectHost();
 const root = document.querySelector<HTMLElement>('#root');
@@ -38,6 +47,115 @@ html, body {
   flex-direction: column;
   gap: 10px;
 }
+.source-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.source-controls label { color: var(--oc-muted); white-space: nowrap; }
+.source-controls button, .source-dialog input, .source-dialog button {
+  color: var(--oc-fg);
+  font: inherit;
+}
+.source-dialog input {
+  min-width: 0;
+  padding: 6px 8px;
+  color: var(--oc-fg);
+  background: color-mix(in srgb, var(--oc-fg) 5%, transparent);
+  border: 1px solid var(--oc-border);
+  border-radius: 6px;
+}
+.source-controls button, .source-dialog button {
+  padding: 6px 9px;
+  color: var(--oc-fg);
+  background: color-mix(in srgb, var(--oc-fg) 5%, transparent);
+  border: 1px solid var(--oc-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.source-controls button:hover, .source-dialog button:hover { background: color-mix(in srgb, var(--oc-fg) 10%, transparent); }
+.source-controls button:focus-visible,
+.source-dialog input:focus-visible, .source-dialog button:focus-visible { outline: 2px solid var(--oc-primary); outline-offset: 2px; }
+.source-picker { position: relative; flex: 1; min-width: 0; }
+.source-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+.source-picker-trigger[aria-expanded="true"] { border-color: var(--oc-primary); }
+.source-picker-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source-picker-chevron { flex: none; color: var(--oc-muted); transition: transform .15s ease; }
+.source-picker-trigger[aria-expanded="true"] .source-picker-chevron { transform: rotate(180deg); }
+.source-picker-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 4px;
+  background: var(--oc-bg);
+  border: 1px solid var(--oc-border);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.4);
+}
+.source-picker-menu[hidden] { display: none; }
+.source-picker-option {
+  display: block;
+  width: 100%;
+  padding: 7px 9px !important;
+  border: 0 !important;
+  border-radius: 5px !important;
+  background: transparent !important;
+  color: var(--oc-fg) !important;
+  text-align: left;
+}
+.source-picker-option:hover, .source-picker-option:focus-visible { background: color-mix(in srgb, var(--oc-fg) 9%, transparent) !important; }
+.source-picker-option[aria-selected="true"] { background: color-mix(in srgb, var(--oc-primary) 20%, transparent) !important; }
+.source-picker-option small { display: block; margin-top: 1px; color: var(--oc-muted); font-size: 10px; }
+.source-picker-option:disabled { opacity: .46; cursor: not-allowed; }
+.source-picker-option:disabled:hover { background: transparent !important; }
+.source-dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  padding: 16px;
+  color: var(--oc-fg);
+  background: var(--oc-bg);
+  border: 1px solid var(--oc-border);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0,0,0,.35);
+}
+.source-dialog *, .source-controls * { box-sizing: border-box; }
+.source-dialog::backdrop { background: rgba(0,0,0,.55); }
+.source-dialog h2 { margin: 0 0 4px; }
+.source-dialog .dialog-help, .source-dialog .dialog-error { color: var(--oc-muted); font-size: 11px; }
+.source-dialog .dialog-error { min-height: 1.4em; color: #ef4444; }
+.server-list { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.server-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px; background: color-mix(in srgb, var(--oc-fg) 4%, transparent); border-radius: 6px; }
+.server-row-info { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.server-row-info strong, .server-row-info small { overflow-wrap: anywhere; }
+.server-row-info small { color: var(--oc-muted); font-size: 10px; }
+.server-actions { display: flex; flex: none; gap: 4px; }
+.server-actions .icon-button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; }
+.icon-button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.server-actions .delete-button { color: var(--oc-muted); }
+.server-actions .delete-button:hover { color: #ef4444; }
+.add-server { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; margin-top: 10px; }
+.add-server input { width: 100%; min-width: 0; }
+.add-server input[name="name"] { grid-column: 1 / -1; }
+.add-server input[name="host"] { grid-column: 1; }
+.add-server button[type="button"]:not(.cancel-edit) { grid-column: 2; }
+.add-server .cancel-edit { grid-column: 1 / -1; justify-self: end; }
+.add-server .cancel-edit[hidden] { display: none; }
+.dialog-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
 h2 {
   margin: 0;
   font-size: 13px;
@@ -139,6 +257,7 @@ h2 {
   font-size: 12px;
   color: var(--oc-muted);
 }
+.status span { min-width: 0; overflow-wrap: anywhere; }
 .status-dot {
   width: 8px;
   height: 8px;
@@ -422,8 +541,338 @@ const llmList = document.createElement('div');
 llmList.className = 'llm-list';
 llmSection.append(llmHeading, llmList);
 
+// ----- Source selection and remote server management -----
+let sourceConfig: SourceConfig = parseSourceConfig(undefined);
+let sourceUpdateQueue: Promise<void> = Promise.resolve();
+let sourceConfigurationError = '';
+let localSourceAvailable = false;
+let localSourceReason = 'Checking local D-Bus…';
+
+const sourceControls = document.createElement('div');
+sourceControls.className = 'source-controls';
+const sourceLabel = document.createElement('label');
+sourceLabel.htmlFor = 'source-picker-trigger';
+sourceLabel.textContent = 'Source';
+const sourcePicker = document.createElement('div');
+sourcePicker.className = 'source-picker';
+const sourcePickerButton = document.createElement('button');
+sourcePickerButton.id = 'source-picker-trigger';
+sourcePickerButton.type = 'button';
+sourcePickerButton.className = 'source-picker-trigger';
+sourcePickerButton.setAttribute('role', 'combobox');
+sourcePickerButton.setAttribute('aria-label', 'Telemetry source');
+sourcePickerButton.setAttribute('aria-haspopup', 'listbox');
+sourcePickerButton.setAttribute('aria-expanded', 'false');
+sourcePickerButton.disabled = true;
+const sourcePickerValue = document.createElement('span');
+sourcePickerValue.className = 'source-picker-value';
+const sourcePickerChevron = document.createElement('span');
+sourcePickerChevron.className = 'source-picker-chevron';
+sourcePickerChevron.setAttribute('aria-hidden', 'true');
+sourcePickerChevron.textContent = '⌄';
+sourcePickerButton.append(sourcePickerValue, sourcePickerChevron);
+const sourcePickerMenu = document.createElement('div');
+sourcePickerMenu.className = 'source-picker-menu';
+sourcePickerMenu.id = 'source-picker-options';
+sourcePickerMenu.setAttribute('role', 'listbox');
+sourcePickerMenu.setAttribute('aria-label', 'Telemetry sources');
+sourcePickerMenu.hidden = true;
+sourcePickerButton.setAttribute('aria-controls', sourcePickerMenu.id);
+sourcePicker.append(sourcePickerButton, sourcePickerMenu);
+const manageSourcesButton = document.createElement('button');
+manageSourcesButton.type = 'button';
+manageSourcesButton.textContent = 'Manage';
+manageSourcesButton.setAttribute('aria-label', 'Manage remote servers');
+sourceControls.append(sourceLabel, sourcePicker, manageSourcesButton);
+
+const sourceDialog = document.createElement('dialog');
+sourceDialog.className = 'source-dialog';
+sourceDialog.setAttribute('aria-labelledby', 'source-dialog-title');
+const dialogTitle = document.createElement('h2');
+dialogTitle.id = 'source-dialog-title';
+dialogTitle.textContent = 'Remote servers';
+const dialogHelp = document.createElement('div');
+dialogHelp.className = 'dialog-help';
+dialogHelp.textContent = 'Enter a hostname or IPv4 address. onvtop uses HTTP on port 8039 and requests the full sample.';
+const serverList = document.createElement('div');
+serverList.className = 'server-list';
+const dialogError = document.createElement('div');
+dialogError.className = 'dialog-error';
+dialogError.setAttribute('role', 'alert');
+const addServerForm = document.createElement('div');
+addServerForm.className = 'add-server';
+const serverNameInput = document.createElement('input');
+serverNameInput.name = 'name';
+serverNameInput.placeholder = 'Name (optional)';
+serverNameInput.setAttribute('aria-label', 'Server display name');
+serverNameInput.maxLength = 80;
+const serverHostInput = document.createElement('input');
+serverHostInput.name = 'host';
+serverHostInput.placeholder = 'hostname';
+serverHostInput.setAttribute('aria-label', 'Server hostname');
+serverHostInput.setAttribute('autocomplete', 'off');
+const addServerButton = document.createElement('button');
+addServerButton.type = 'button';
+addServerButton.textContent = 'Add';
+const cancelEditButton = document.createElement('button');
+cancelEditButton.type = 'button';
+cancelEditButton.className = 'cancel-edit';
+cancelEditButton.textContent = 'Cancel edit';
+cancelEditButton.hidden = true;
+addServerForm.append(serverNameInput, serverHostInput, addServerButton, cancelEditButton);
+const dialogActions = document.createElement('div');
+dialogActions.className = 'dialog-actions';
+const closeDialogButton = document.createElement('button');
+closeDialogButton.type = 'button';
+closeDialogButton.textContent = 'Done';
+dialogActions.append(closeDialogButton);
+sourceDialog.append(dialogTitle, dialogHelp, serverList, dialogError, addServerForm, dialogActions);
+let editingSourceId: string | null = null;
+
+function clearServerForm(): void {
+  editingSourceId = null;
+  serverNameInput.value = '';
+  serverHostInput.value = '';
+  addServerButton.textContent = 'Add';
+  cancelEditButton.hidden = true;
+}
+
+function createServerIconButton(label: string, paths: string[], extraClass = ''): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `icon-button ${extraClass}`.trim();
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('viewBox', '0 0 24 24');
+  icon.setAttribute('aria-hidden', 'true');
+  for (const d of paths) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    icon.append(path);
+  }
+  button.append(icon);
+  return button;
+}
+
+function renderSourceOptions(): void {
+  const options = [
+    {
+      id: LOCAL_SOURCE_ID,
+      label: 'Local D-Bus',
+      detail: localSourceAvailable ? 'This machine' : localSourceReason || 'Unavailable on this machine',
+    },
+    ...sourceConfig.remoteSources.map((source) => ({ id: source.id, label: source.label, detail: `${source.host}:8039` })),
+  ];
+  const selected = options.find(({ id }) => id === sourceConfig.selectedSourceId) ?? options[0];
+  sourcePickerValue.textContent = selected.label;
+  sourcePickerButton.setAttribute('aria-label', `Telemetry source: ${selected.label}`);
+  sourcePickerMenu.replaceChildren();
+  for (const option of options) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'source-picker-option';
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', String(option.id === selected.id));
+    item.disabled = option.id === LOCAL_SOURCE_ID && !localSourceAvailable;
+    if (item.disabled) item.title = option.detail;
+    item.dataset.sourceId = option.id;
+    const title = document.createElement('span');
+    title.textContent = option.label;
+    const detail = document.createElement('small');
+    detail.textContent = option.detail;
+    item.append(title, detail);
+    item.addEventListener('click', () => {
+      setSourceMenuOpen(false);
+      if (sourceConfig.selectedSourceId !== option.id) {
+        void saveSourceConfig({ ...sourceConfig, selectedSourceId: option.id });
+      }
+    });
+    sourcePickerMenu.append(item);
+  }
+}
+
+function setSourceMenuOpen(open: boolean, focusFirst = false): void {
+  sourcePickerMenu.hidden = !open;
+  sourcePickerButton.setAttribute('aria-expanded', String(open));
+  if (open && focusFirst) sourcePickerMenu.querySelector<HTMLButtonElement>('[role="option"]')?.focus();
+}
+
+sourcePickerButton.addEventListener('click', () => {
+  setSourceMenuOpen(sourcePickerMenu.hidden);
+});
+sourcePickerButton.addEventListener('keydown', (event) => {
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    setSourceMenuOpen(true, true);
+  }
+});
+sourcePickerMenu.addEventListener('keydown', (event) => {
+  const options = Array.from(sourcePickerMenu.querySelectorAll<HTMLButtonElement>('[role="option"]'));
+  const index = options.indexOf(document.activeElement as HTMLButtonElement);
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    setSourceMenuOpen(false);
+    sourcePickerButton.focus();
+  } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    const delta = event.key === 'ArrowDown' ? 1 : -1;
+    options[(index + delta + options.length) % options.length]?.focus();
+  } else if (event.key === 'Home') {
+    event.preventDefault();
+    options[0]?.focus();
+  } else if (event.key === 'End') {
+    event.preventDefault();
+    options.at(-1)?.focus();
+  }
+});
+document.addEventListener('click', (event) => {
+  if (!sourcePicker.contains(event.target as Node)) setSourceMenuOpen(false);
+});
+
+function renderRemoteServers(): void {
+  serverList.replaceChildren();
+  if (sourceConfig.remoteSources.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'dialog-help';
+    empty.textContent = 'No remote servers added.';
+    serverList.append(empty);
+    return;
+  }
+  for (const source of sourceConfig.remoteSources) {
+    const row = document.createElement('div');
+    row.className = 'server-row';
+    const info = document.createElement('div');
+    info.className = 'server-row-info';
+    const name = document.createElement('strong');
+    name.textContent = source.label;
+    const host = document.createElement('small');
+    host.textContent = `${source.host}:8039`;
+    info.append(name, host);
+    const actions = document.createElement('div');
+    actions.className = 'server-actions';
+    const edit = createServerIconButton(`Edit ${source.label}`, ['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z']);
+    edit.addEventListener('click', () => {
+      editingSourceId = source.id;
+      serverNameInput.value = source.label;
+      serverHostInput.value = source.host;
+      addServerButton.textContent = 'Save';
+      cancelEditButton.hidden = false;
+      dialogError.textContent = '';
+      serverHostInput.focus();
+    });
+    const remove = createServerIconButton(`Delete ${source.label}`, [
+      'M3 6h18',
+      'M8 6V4h8v2',
+      'M19 6l-1 14H6L5 6',
+      'M10 11v6',
+      'M14 11v6',
+    ], 'delete-button');
+    remove.addEventListener('click', () => {
+      const remoteSources = sourceConfig.remoteSources.filter(({ id }) => id !== source.id);
+      const selectedSourceId = sourceConfig.selectedSourceId === source.id ? LOCAL_SOURCE_ID : sourceConfig.selectedSourceId;
+      if (editingSourceId === source.id) clearServerForm();
+      void saveSourceConfig({ ...sourceConfig, selectedSourceId, remoteSources });
+      dialogError.textContent = '';
+      renderRemoteServers();
+    });
+    actions.append(edit, remove);
+    row.append(info, actions);
+    serverList.append(row);
+  }
+}
+
+function saveSourceConfig(next: SourceConfig): Promise<void> {
+  sourceConfig = next;
+  sourceConfigurationError = '';
+  renderSourceOptions();
+  renderRemoteServers();
+  statusDot.className = 'status-dot';
+  statusText.textContent = 'Connecting…';
+  statusText.title = '';
+  sourceUpdateQueue = sourceUpdateQueue.then(async () => {
+    await host.storage.set(SOURCE_CONFIG_STORAGE_KEY, sourceConfig);
+    const result = await host.serviceRequest({
+      method: 'POST',
+      path: '/source',
+      body: JSON.stringify(serviceSource(sourceConfig)),
+    });
+    if (result.status !== 200) {
+      let detail = '';
+      try {
+        const body = JSON.parse(result.body);
+        if (typeof body.error === 'string') detail = `: ${body.error}`;
+      } catch { /* non-JSON service error */ }
+      if (result.status === 404) throw new Error('Onvtop service is outdated. Restart OpenChamber.');
+      throw new Error(`Source request failed (HTTP ${result.status}${detail}).`);
+    }
+  }).catch((error: unknown) => {
+    console.warn('Could not save onvtop source configuration', error);
+    const message = error instanceof Error ? error.message : 'Could not change source';
+    sourceConfigurationError = message;
+    statusText.textContent = message;
+    statusText.title = message;
+    statusDot.className = 'status-dot error';
+  });
+  return sourceUpdateQueue;
+}
+
+manageSourcesButton.addEventListener('click', () => {
+  dialogError.textContent = '';
+  renderRemoteServers();
+  sourceDialog.showModal();
+  serverHostInput.focus();
+});
+closeDialogButton.addEventListener('click', () => sourceDialog.close());
+sourceDialog.addEventListener('click', (event) => {
+  if (event.target === sourceDialog) sourceDialog.close();
+});
+function saveRemoteServer(): void {
+  dialogError.textContent = '';
+  try {
+    if (!editingSourceId && sourceConfig.remoteSources.length >= 50) throw new Error('You can add up to 50 remote servers.');
+    const hostName = normalizeRemoteHost(serverHostInput.value);
+    if (sourceConfig.remoteSources.some((source) => source.host === hostName && source.id !== editingSourceId)) {
+      throw new Error('That host is already in the list.');
+    }
+    const label = serverNameInput.value.trim() || hostName;
+    if (label.length > 80) throw new Error('The server name must be 80 characters or fewer.');
+    if (editingSourceId) {
+      const remoteSources = sourceConfig.remoteSources.map((source) => source.id === editingSourceId
+        ? { ...source, label, host: hostName }
+        : source);
+      void saveSourceConfig({ ...sourceConfig, remoteSources });
+    } else {
+      const id = `remote-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+      const remote: RemoteSource = { id, label, host: hostName };
+      void saveSourceConfig({
+        selectedSourceId: id,
+        remoteSources: [...sourceConfig.remoteSources, remote],
+      });
+    }
+    clearServerForm();
+    renderRemoteServers();
+    serverHostInput.focus();
+  } catch (error) {
+    dialogError.textContent = error instanceof Error ? error.message : 'Invalid server address.';
+  }
+}
+addServerButton.addEventListener('click', saveRemoteServer);
+for (const input of [serverNameInput, serverHostInput]) {
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      saveRemoteServer();
+    }
+  });
+}
+cancelEditButton.addEventListener('click', () => {
+  clearServerForm();
+  dialogError.textContent = '';
+});
+
 // ----- Load -----
-root.append(statusRow, statsRow, memDetail, chartSection, llmSection);
+root.append(statusRow, statsRow, memDetail, chartSection, sourceControls, llmSection, sourceDialog);
 
 type LlmCardView = {
   element: HTMLElement;
@@ -572,9 +1021,29 @@ function updateUI(stats: Stats): void {
   const { gpu, sys } = stats.sample;
   updateLlmCards(stats.sample.llm);
 
+  if (typeof stats.localSourceAvailable === 'boolean') {
+    const available = stats.localSourceAvailable;
+    const reason = stats.localSourceReason || 'Unavailable on this machine';
+    if (available !== localSourceAvailable || (!available && reason !== localSourceReason)) {
+      localSourceAvailable = available;
+      localSourceReason = available ? '' : reason;
+      renderSourceOptions();
+    }
+  }
+
+  if (sourceConfigurationError) {
+    statusDot.className = 'status-dot error';
+    statusText.textContent = sourceConfigurationError;
+    statusText.title = sourceConfigurationError;
+    drawChart(stats.history, seriesVisibility);
+    hasError = true;
+    return;
+  }
+
   if (!stats.sourceAvailable) {
     statusDot.className = 'status-dot error';
-    statusText.textContent = 'nvstats-service unavailable';
+    statusText.textContent = `${stats.sourceLabel || 'nvstats-service'} unavailable`;
+    statusText.title = stats.sourceError || 'No sample received from this source';
     drawChart(stats.history, seriesVisibility);
     hasError = true;
     return;
@@ -607,7 +1076,8 @@ function updateUI(stats: Stats): void {
 
   // Status
   statusDot.className = 'status-dot ok';
-  statusText.textContent = 'Live';
+  statusText.textContent = `Live · ${stats.sourceLabel || 'nvstats-service'}`;
+  statusText.title = '';
   hasError = false;
 }
 
@@ -680,6 +1150,16 @@ host.onReady(async (ctx) => {
     syncSeriesControls();
   } catch (error) {
     console.warn('Could not load onvtop graph visibility', error);
+  }
+  try {
+    sourceConfig = parseSourceConfig(await host.storage.get(SOURCE_CONFIG_STORAGE_KEY));
+    renderSourceOptions();
+    sourcePickerButton.disabled = false;
+    await saveSourceConfig(sourceConfig);
+  } catch (error) {
+    console.warn('Could not load onvtop source configuration', error);
+    renderSourceOptions();
+    sourcePickerButton.disabled = false;
   }
   startPolling();
   poll();
