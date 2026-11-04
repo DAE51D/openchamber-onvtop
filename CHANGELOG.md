@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 — 2026-11-03
 
 - Add a source selector for local D-Bus or configurable remote HTTP servers on port 8039; remote mode reads the full nvstats sample.
 - Add initial EVO-X2 and Proxmox remote entries and a panel UI to add/edit/remove remote hosts.
