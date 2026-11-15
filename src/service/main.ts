@@ -3,7 +3,7 @@ import http from 'node:http';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import { type HistorySeries, type Sample, type Stats, HISTORY_LENGTH, SAMPLE_INTERVAL_MS } from '../shared/types.ts';
+import { type HistorySeries, type Sample, type Stats, HISTORY_POINTS, SAMPLE_INTERVAL_MS } from '../shared/types.ts';
 import { percentOf, powerPercent } from '../shared/series.ts';
 import { normalizeRemoteHost, remoteSampleUrl, sameServiceSource, type ServiceSource } from '../shared/sources.ts';
 
@@ -22,6 +22,8 @@ const history: HistorySeries = {
   temp: [],
   power: [],
   cpu: [],
+  npu: [],
+  times: [],
 };
 
 let lastSample: Sample | null = null;
@@ -41,7 +43,7 @@ const LOCAL_PROBE_INTERVAL_MS = 15_000;
 
 function push(series: (number | null)[], value: number | null) {
   series.push(value);
-  while (series.length > HISTORY_LENGTH) {
+  while (series.length > HISTORY_POINTS) {
     series.shift();
   }
 }
@@ -58,6 +60,7 @@ function normalizeSample(value: unknown): Sample {
   const list = (key: string) => Array.isArray(rawLlm[key]) ? rawLlm[key] : [];
   return {
     gpu: data.gpu,
+    npu: data.npu && typeof data.npu === 'object' ? data.npu : null,
     sys: data.sys,
     llm: {
       llama: list('llama'),
@@ -65,6 +68,7 @@ function normalizeSample(value: unknown): Sample {
       vllm: list('vllm'),
       sglang: list('sglang'),
       tgi: list('tgi'),
+      flm: list('flm'),
       ollama_models: list('ollama_models'),
     },
   } as Sample;
@@ -132,6 +136,8 @@ function resetHistory(): void {
   history.temp.length = 0;
   history.power.length = 0;
   history.cpu.length = 0;
+  history.npu.length = 0;
+  history.times.length = 0;
 }
 
 async function tick() {
@@ -159,6 +165,8 @@ async function tick() {
     const powerPct = powerPercent(sample.gpu.power_w, sample.gpu.power_cap_w);
     push(history.power, powerPct);
     push(history.cpu, sample.sys.cpu);
+    push(history.npu, sample.npu?.readable ? sample.npu.util : null);
+    push(history.times, lastTimestamp);
   } catch (error) {
     if (generation !== sourceGeneration) return;
     lastError = error instanceof Error ? error.message.slice(0, 180) : 'unknown connection error';
@@ -173,6 +181,8 @@ async function tick() {
     push(history.temp, null);
     push(history.power, null);
     push(history.cpu, null);
+    push(history.npu, null);
+    push(history.times, Date.now());
   } finally {
     tickInFlight = false;
   }
@@ -257,7 +267,7 @@ const server = http.createServer((req, res) => {
       sample: lastSample ?? {
         gpu: { util: null, mem_used: null, mem_total: null, temp: null, power_w: null, power_cap_w: null },
         sys: { ram_used: 0, ram_total: 0, swap_used: 0, swap_total: 0, load1: 0, load5: 0, load15: 0, cpu: null },
-        llm: { llama: [], ollama: [], vllm: [], sglang: [], tgi: [], ollama_models: [] },
+        llm: { llama: [], ollama: [], vllm: [], sglang: [], tgi: [], flm: [], ollama_models: [] },
       },
       history,
       timestamp: lastTimestamp,

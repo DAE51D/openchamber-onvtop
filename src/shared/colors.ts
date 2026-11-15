@@ -4,5 +4,6 @@ export const COLORS = {
   temp: '#b07fe8',
   power: '#3ddc84',
   cpu: '#ff8c42',
+  npu: '#ec60a0',
   systemRam: '#89929c',
 } as const;

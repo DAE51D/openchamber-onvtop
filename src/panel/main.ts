@@ -1,3 +1,4 @@
+import { areaPolygon, scrollPoints, toPolyline } from '../shared/chart.ts';
 import { connectHost } from '@openchamber/sdk';
 import { applyHostReady } from '@openchamber/sdk/ui';
 
@@ -340,6 +341,7 @@ const SERIES_LABELS = {
   temp: 'Temp',
   power: 'Power',
   cpu: 'CPU',
+  npu: 'NPU',
 };
 
 // Match knvtop's 0..100 scales; power history is normalized in the service.
@@ -349,6 +351,7 @@ const seriesMax = {
   temp: 100, // will be clamped
   power: 100, // normalized to power cap or max seen
   cpu: 100,
+  npu: 100,
 };
 
 function drawChart(history: HistorySeries, visible: SeriesVisibility): void {
@@ -363,16 +366,6 @@ function drawChart(history: HistorySeries, visible: SeriesVisibility): void {
   const width = 300;
   const height = 100;
   const pad = 2;
-
-  const xOf = (index: number, count: number) => {
-    if (count <= 1) return width / 2;
-    return pad + ((HISTORY_LENGTH - count + index) / (HISTORY_LENGTH - 1)) * (width - 2 * pad);
-  };
-
-  const yOf = (value: number, max: number) => {
-    const clamped = Math.min(Math.max(value, 0), max);
-    return height - pad - (clamped / max) * (height - 2 * pad);
-  };
 
   // Draw grid lines at 25%, 50%, 75%
   const gridGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -389,35 +382,29 @@ function drawChart(history: HistorySeries, visible: SeriesVisibility): void {
   }
   svg.appendChild(gridGroup);
 
+  // Points are placed by age, and age keeps growing between polls, so the line
+  // scrolls continuously (redrawn every animation frame) instead of jumping.
+  const sinceReceive = performance.now() - receivedAt;
+  const lastTimestamp = currentStats?.timestamp ?? Date.now();
+
   // Draw each series
   for (const key of SERIES_KEYS) {
     if (!visible[key]) continue;
-    const values = history[key];
     const color = COLORS[key];
-    const max = seriesMax[key];
-
-    // Build path
-    const points: string[] = [];
-    values.forEach((value, index) => {
-      if (value === null) return;
-      const x = xOf(index, values.length);
-      const y = yOf(value, max);
-      points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+    const pts = scrollPoints(history[key], history.times ?? [], lastTimestamp, sinceReceive, {
+      width, height, pad, max: seriesMax[key], windowSec: HISTORY_LENGTH - 1,
     });
-
-    if (points.length < 2) continue;
+    if (pts.length < 2) continue;
 
     // Draw the fill first so it never washes out the crisp line.
-    const firstX = points[0].split(',')[0];
-    const lastX = points[points.length - 1].split(',')[0];
     const area = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-    area.setAttribute('points', `${firstX},${height} ${points.join(' ')} ${lastX},${height}`);
+    area.setAttribute('points', areaPolygon(pts, height));
     area.setAttribute('fill', color);
     area.setAttribute('opacity', '0.08');
     svg.appendChild(area);
 
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-    path.setAttribute('points', points.join(' '));
+    path.setAttribute('points', toPolyline(pts));
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', color);
     path.setAttribute('stroke-width', '1.5');
@@ -430,6 +417,7 @@ function drawChart(history: HistorySeries, visible: SeriesVisibility): void {
 
 // ----- State -----
 let currentStats: Stats | null = null;
+let receivedAt = performance.now(); // when currentStats arrived, for scroll timing
 let hasError = false;
 let errorCount = 0;
 let seriesVisibility = parseSeriesVisibility(undefined);
@@ -488,6 +476,18 @@ statCpu.innerHTML = `
   <span class="stat-value">–</span>
 `;
 
+// NPU: created always, shown only when the host reports one (N/A if unreadable).
+const statNpu = document.createElement('button');
+statNpu.type = 'button';
+statNpu.dataset.series = 'npu';
+statNpu.className = 'stat';
+statNpu.style.display = 'none';
+statNpu.innerHTML = `
+  <span class="stat-label">NPU</span>
+  <span class="stat-value">–</span>
+`;
+let npuPresent = false;
+
 const statGtt = document.createElement('button');
 statGtt.type = 'button';
 statGtt.dataset.series = 'mem';
@@ -499,7 +499,7 @@ statGtt.innerHTML = `
 
 const statsRow = document.createElement('div');
 statsRow.className = 'stats-row';
-statsRow.append(statUtil, statGtt, statTemp, statPower, statCpu, statSysRam);
+statsRow.append(statUtil, statGtt, statTemp, statPower, statCpu, statSysRam, statNpu);
 const cardColors = [
   [statUtil, COLORS.util],
   [statSysRam, COLORS.systemRam],
@@ -507,6 +507,7 @@ const cardColors = [
   [statPower, COLORS.power],
   [statCpu, COLORS.cpu],
   [statGtt, COLORS.mem],
+  [statNpu, COLORS.npu],
 ] as const;
 for (const [card, color] of cardColors) card.style.setProperty('--series-color', color);
 
@@ -529,6 +530,7 @@ chartSection.innerHTML = `
       <button class="legend-item" type="button" data-series="temp" style="--series-color:${COLORS.temp}" aria-pressed="true"><span class="legend-dot" style="background:${COLORS.temp}"></span>${SERIES_LABELS.temp}</button>
       <button class="legend-item" type="button" data-series="power" style="--series-color:${COLORS.power}" aria-pressed="true"><span class="legend-dot" style="background:${COLORS.power}"></span>${SERIES_LABELS.power}</button>
       <button class="legend-item" type="button" data-series="cpu" style="--series-color:${COLORS.cpu}" aria-pressed="true"><span class="legend-dot" style="background:${COLORS.cpu}"></span>${SERIES_LABELS.cpu}</button>
+      <button class="legend-item" type="button" data-series="npu" style="display:none;--series-color:${COLORS.npu}" aria-pressed="true"><span class="legend-dot" style="background:${COLORS.npu}"></span>${SERIES_LABELS.npu}</button>
     </div>
   </div>
 `;
@@ -890,6 +892,7 @@ const ENGINE_COLORS: Record<LlmCard['engine'], string> = {
   vllm: COLORS.temp,
   sglang: COLORS.power,
   tgi: COLORS.cpu,
+  flm: COLORS.npu,
 };
 
 const processPercent = (value: number | null | undefined): string =>
@@ -913,6 +916,9 @@ function makeLlmCardView(): LlmCardView {
   return { element, title, stats, meta, flags, flagsSignature: '' };
 }
 
+const onNpu = (card: LlmCard): boolean =>
+  card.engine === 'flm' || (card.process?.type ?? []).includes('npu');
+
 function cardMeta(card: LlmCard): string {
   const process = card.process;
   if (!process) {
@@ -925,6 +931,8 @@ function cardMeta(card: LlmCard): string {
   }
   return [
     process.user && `user: ${process.user}`,
+    // Device tag only on hosts that have an NPU, so GPU-only setups stay uncluttered.
+    npuPresent && `device: ${onNpu(card) ? 'NPU' : 'GPU'}`,
     process.ngl && `ngl: ${process.ngl}`,
     process.ctx && `ctx: ${process.ctx}`,
     process.parallel && `parallel: ${process.parallel}`,
@@ -940,7 +948,8 @@ function updateLlmCard(view: LlmCardView, card: LlmCard): void {
 
   if (card.process) {
     const process = card.process;
-    view.stats.textContent = `GPU (proc): ${processPercent(process.gpu_pct)}   GPU MEM (proc): ${processMiB(process.vram_kb)}   CPU: ${processPercent(process.cpu_pct)}   RSS: ${processMiB(process.rss_kb)}`;
+    const device = npuPresent && onNpu(card) ? 'NPU' : 'GPU';
+    view.stats.textContent = `${device} (proc): ${processPercent(process.gpu_pct)}   ${device} MEM (proc): ${processMiB(process.vram_kb)}   CPU: ${processPercent(process.cpu_pct)}   RSS: ${processMiB(process.rss_kb)}`;
   } else if (card.ollamaModel) {
     const model = card.ollamaModel;
     const size = model.size ? formatBytes(model.size) : 'N/A';
@@ -1018,7 +1027,11 @@ for (const control of Array.from(root!.querySelectorAll<HTMLButtonElement>('[dat
 syncSeriesControls();
 
 function updateUI(stats: Stats): void {
-  const { gpu, sys } = stats.sample;
+  const { gpu, sys, npu } = stats.sample;
+  npuPresent = !!npu?.present;
+  for (const el of [statNpu, ...Array.from(root!.querySelectorAll<HTMLElement>('.legend-item[data-series="npu"]'))]) {
+    el.style.display = npuPresent ? '' : 'none';
+  }
   updateLlmCards(stats.sample.llm);
 
   if (typeof stats.localSourceAvailable === 'boolean') {
@@ -1054,6 +1067,8 @@ function updateUI(stats: Stats): void {
   statTemp.querySelector('.stat-value')!.textContent = formatTemp(gpu.temp);
   statPower.querySelector('.stat-value')!.textContent = formatWatts(gpu.power_w);
   statCpu.querySelector('.stat-value')!.textContent = formatPercent(sys.cpu);
+  statNpu.querySelector('.stat-value')!.textContent = npu?.readable ? formatPercent(npu.util) : 'N/A';
+  statNpu.title = npu?.readable ? '' : (npu?.reason ?? 'NPU not readable');
 
   // GPU memory
   const memUsedMiB = gpu.mem_used ?? 0;
@@ -1094,6 +1109,7 @@ async function poll(): Promise<void> {
     const body = JSON.parse(result.body);
     if (result.status === 200) {
       currentStats = body as Stats;
+      receivedAt = performance.now();
       updateUI(currentStats);
       errorCount = 0;
     } else {
@@ -1107,6 +1123,23 @@ async function poll(): Promise<void> {
   }
 }
 
+// Redraw the chart ~30x/s so the lines scroll smoothly between 1 s samples.
+let animationFrame = 0;
+let lastFrameAt = 0;
+function animate(now: number): void {
+  animationFrame = requestAnimationFrame(animate);
+  if (now - lastFrameAt < 33) return;
+  lastFrameAt = now;
+  if (currentStats?.sourceAvailable && !sourceConfigurationError) drawChart(currentStats.history, seriesVisibility);
+}
+function startAnimation(): void {
+  if (!animationFrame) animationFrame = requestAnimationFrame(animate);
+}
+function stopAnimation(): void {
+  if (animationFrame) cancelAnimationFrame(animationFrame);
+  animationFrame = 0;
+}
+
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let isPolling = false;
 
@@ -1117,10 +1150,12 @@ function startPolling(): void {
       isPolling = true;
       poll().finally(() => { isPolling = false; });
     }
-  }, 2000);
+  }, 1000);
+  startAnimation();
 }
 
 function stopPolling(): void {
+  stopAnimation();
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;

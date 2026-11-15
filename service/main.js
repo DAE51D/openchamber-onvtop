@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 
 // src/shared/types.ts
 var HISTORY_LENGTH = 21;
+var HISTORY_POINTS = HISTORY_LENGTH + 4;
 var SAMPLE_INTERVAL_MS = 1000;
 
 // src/shared/series.ts
@@ -44,7 +45,9 @@ var history = {
   mem: [],
   temp: [],
   power: [],
-  cpu: []
+  cpu: [],
+  npu: [],
+  times: []
 };
 var lastSample = null;
 var lastTimestamp = 0;
@@ -60,7 +63,7 @@ var lastLocalProbeAt = 0;
 var LOCAL_PROBE_INTERVAL_MS = 15000;
 function push(series, value) {
   series.push(value);
-  while (series.length > HISTORY_LENGTH) {
+  while (series.length > HISTORY_POINTS) {
     series.shift();
   }
 }
@@ -76,6 +79,7 @@ function normalizeSample(value) {
   const list = (key) => Array.isArray(rawLlm[key]) ? rawLlm[key] : [];
   return {
     gpu: data.gpu,
+    npu: data.npu && typeof data.npu === "object" ? data.npu : null,
     sys: data.sys,
     llm: {
       llama: list("llama"),
@@ -83,6 +87,7 @@ function normalizeSample(value) {
       vllm: list("vllm"),
       sglang: list("sglang"),
       tgi: list("tgi"),
+      flm: list("flm"),
       ollama_models: list("ollama_models")
     }
   };
@@ -152,6 +157,8 @@ function resetHistory() {
   history.temp.length = 0;
   history.power.length = 0;
   history.cpu.length = 0;
+  history.npu.length = 0;
+  history.times.length = 0;
 }
 async function tick() {
   if (tickInFlight)
@@ -178,6 +185,8 @@ async function tick() {
     const powerPct = powerPercent(sample.gpu.power_w, sample.gpu.power_cap_w);
     push(history.power, powerPct);
     push(history.cpu, sample.sys.cpu);
+    push(history.npu, sample.npu?.readable ? sample.npu.util : null);
+    push(history.times, lastTimestamp);
   } catch (error) {
     if (generation !== sourceGeneration)
       return;
@@ -192,6 +201,8 @@ async function tick() {
     push(history.temp, null);
     push(history.power, null);
     push(history.cpu, null);
+    push(history.npu, null);
+    push(history.times, Date.now());
   } finally {
     tickInFlight = false;
   }
@@ -277,7 +288,7 @@ var server = http.createServer((req, res) => {
       sample: lastSample ?? {
         gpu: { util: null, mem_used: null, mem_total: null, temp: null, power_w: null, power_cap_w: null },
         sys: { ram_used: 0, ram_total: 0, swap_used: 0, swap_total: 0, load1: 0, load5: 0, load15: 0, cpu: null },
-        llm: { llama: [], ollama: [], vllm: [], sglang: [], tgi: [], ollama_models: [] }
+        llm: { llama: [], ollama: [], vllm: [], sglang: [], tgi: [], flm: [], ollama_models: [] }
       },
       history,
       timestamp: lastTimestamp,

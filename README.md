@@ -10,7 +10,7 @@ GPU-focused OpenChamber rail panel and compact Work Status graph, powered by the
 
 The panel now includes read-only per-model cards for detected local inference processes, with process CPU/GPU/memory metrics and parsed launch flags where available. It does not expose process kill or restart controls.
 
-The panel shows GPU utilization, shared GTT memory, temperature, power, CPU and system RAM. Its graph plots GPU utilization, GTT, temperature, power and CPU; system RAM is shown separately and is never presented as GPU RAM. Click a graph-backed card or legend label to toggle its line. Visibility preferences are saved and shared with the Work Status graph.
+The panel shows GPU utilization, shared GTT memory, temperature, power, CPU, system RAM and, on machines with an NPU (AMD XDNA / Ryzen AI), an NPU card. Its graph plots GPU utilization, GTT, temperature, power, CPU and NPU; system RAM is shown separately and is never presented as GPU RAM. Click a graph-backed card or legend label to toggle its line. Visibility preferences are saved and shared with the Work Status graph.
 
 **onvtop also accurately shows the GPU RAM in the new shared CPU/GPU systems. Unlike many of the other system resource extensions out there, that would show only 2 GB for VRAM, this will correctly show 78 GB (for example).**
 
@@ -35,7 +35,7 @@ Remote mode does not send an authentication token. Configure the HTTP endpoint w
 
 > You do **not** need to install the [knvtop Plasma widget](https://store.kde.org/p/2370069/). Install the shared daemon once; both [knvtop](https://github.com/DAE51D/knvtop) and onvtop can use it.
 
-Model cards are currently built from lightweight Linux process-argument detection for llama.cpp, Ollama, vLLM, SGLang, and Hugging Face TGI. Desktop clients are not listed as model processes. Per-model CPU/GPU counters are shown only when the runtime exposes them; Ollama model cards use Ollama's loaded-model API data.
+Model cards are currently built from lightweight Linux process-argument detection for llama.cpp, Ollama, vLLM, SGLang, Hugging Face TGI, and FastFlowLM (NPU). On hosts with an NPU each card is labeled NPU or GPU; NPU utilization is an activity estimate because the driver has no busy counter, and NPU memory is the same unified system RAM as the CPU and GPU. Without an NPU none of this is shown. Desktop clients are not listed as model processes. Per-model CPU/GPU counters are shown only when the runtime exposes them; Ollama model cards use Ollama's loaded-model API data.
 
 ## Install the shared daemon
 

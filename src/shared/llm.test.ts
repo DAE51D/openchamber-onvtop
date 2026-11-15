@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { collectLlmCards, displayFlags } from './llm.ts';
+import { collectLlmCards, displayFlags, engineLabel } from './llm.ts';
 import type { LlmSample } from './types.ts';
 
 const emptyLlm = (): LlmSample => ({
-  llama: [], ollama: [], vllm: [], sglang: [], tgi: [], ollama_models: [],
+  llama: [], ollama: [], vllm: [], sglang: [], tgi: [], flm: [], ollama_models: [],
 });
 
 describe('LLM process cards', () => {
@@ -35,4 +35,14 @@ describe('LLM process cards', () => {
       { key: 'tensor-parallel-size', value: '2' },
     ]);
   });
+});
+
+test('FastFlowLM processes get their own NPU engine card', () => {
+  const cards = collectLlmCards({
+    llama: [], ollama: [], vllm: [], sglang: [], tgi: [], ollama_models: [],
+    flm: [{ pid: 7, model: 'qwen3.5:9b', type: ['npu'] }],
+  });
+  expect(cards).toHaveLength(1);
+  expect(cards[0].engine).toBe('flm');
+  expect(engineLabel('flm')).toBe('FastFlowLM');
 });

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0 — 2026-11-15
+
+- Add optional NPU support (AMD XDNA / Ryzen AI): an NPU card, a pink graph line and legend entry, and NPU/GPU labels on model cards. Everything NPU-related is hidden on hosts without an NPU, and shows N/A when an NPU exists but cannot be read. Needs nvstats-service 1.1.0 or newer.
+- Detect FastFlowLM (NPU) model processes.
+- The graphs now scroll continuously between samples instead of jumping once per poll, and the left edge no longer snaps.
+- Shade the area under the small Work Status graph lines, like the panel graph.
+- Series, order and colors now match knvtop and turzx-nvtop (GPU, GTT, Temp, Power, CPU, NPU).
+
 ## 1.3.0 — 2026-11-03
 
 - Add a source selector for local D-Bus or configurable remote HTTP servers on port 8039; remote mode reads the full nvstats sample.

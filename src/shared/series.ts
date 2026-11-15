@@ -1,4 +1,4 @@
-export const SERIES_KEYS = ['util', 'mem', 'temp', 'power', 'cpu'] as const;
+export const SERIES_KEYS = ['util', 'mem', 'temp', 'power', 'cpu', 'npu'] as const;
 export type SeriesKey = (typeof SERIES_KEYS)[number];
 export type SeriesVisibility = Record<SeriesKey, boolean>;
 export const SERIES_VISIBILITY_STORAGE_KEY = 'seriesVisibilityV1';
@@ -8,6 +8,7 @@ export const DEFAULT_SERIES_VISIBILITY: SeriesVisibility = {
   temp: true,
   power: true,
   cpu: true,
+  npu: true,
 };
 
 export const parseSeriesVisibility = (value: unknown): SeriesVisibility => {

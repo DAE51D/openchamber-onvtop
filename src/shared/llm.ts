@@ -1,6 +1,6 @@
 import type { LlmProcess, LlmSample, OllamaModel } from './types.ts';
 
-export type Engine = 'llama' | 'ollama' | 'vllm' | 'sglang' | 'tgi';
+export type Engine = 'llama' | 'ollama' | 'vllm' | 'sglang' | 'tgi' | 'flm';
 
 export type LlmCard = {
   key: string;
@@ -16,6 +16,7 @@ const ENGINE_LABELS: Record<Engine, string> = {
   vllm: 'vLLM',
   sglang: 'SGLang',
   tgi: 'Hugging Face TGI',
+  flm: 'FastFlowLM',
 };
 
 export function engineLabel(engine: Engine): string {
@@ -24,7 +25,7 @@ export function engineLabel(engine: Engine): string {
 
 export function collectLlmCards(llm: LlmSample): LlmCard[] {
   const cards: LlmCard[] = [];
-  const processEngines: Engine[] = ['llama', 'ollama', 'vllm', 'sglang', 'tgi'];
+  const processEngines: Engine[] = ['llama', 'ollama', 'vllm', 'sglang', 'tgi', 'flm'];
 
   for (const engine of processEngines) {
     for (const process of llm[engine] ?? []) {
