@@ -1,6 +1,6 @@
 {
   "name": "openchamber-onvtop",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "GPU-focused OpenChamber monitor powered by nvstats-service over local D-Bus or remote HTTP",
   "private": true,
   "type": "module",

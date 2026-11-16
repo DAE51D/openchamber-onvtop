@@ -12,6 +12,27 @@ var SAMPLE_INTERVAL_MS = 1000;
 var percentOf = (value, total) => value === null || total === null || total <= 0 ? null : value / total * 100;
 var powerPercent = (watts, capWatts) => watts === null ? null : Math.min(100, watts * 100 / (capWatts || 100));
 
+// src/shared/process.ts
+var PROCESS_ACTIONS = ["kill", "restart"];
+function isProcessAction(value) {
+  return typeof value === "string" && PROCESS_ACTIONS.includes(value);
+}
+function parsePid(value) {
+  const pid = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : value;
+  return typeof pid === "number" && Number.isSafeInteger(pid) && pid > 1 ? pid : null;
+}
+function parseBusctlReply(stdout) {
+  const match = /^bs\s+(true|false)\s+"((?:[^"\\]|\\.)*)"\s*$/.exec(stdout.trim());
+  if (!match)
+    throw new Error("unexpected reply from nvstats-service");
+  const message = match[2].replace(/\\(.)/g, (_, c) => c === "n" ? `
+` : c);
+  return { ok: match[1] === "true", message };
+}
+function llmProcesses(llm) {
+  return [llm.llama, llm.ollama, llm.vllm, llm.sglang, llm.tgi, llm.flm].flatMap((list) => list ?? []);
+}
+
 // src/shared/sources.ts
 var HOST_PATTERN = /^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(?:\.(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?))*\.?$/;
 function normalizeRemoteHost(value) {
@@ -81,6 +102,8 @@ function normalizeSample(value) {
     gpu: data.gpu,
     npu: data.npu && typeof data.npu === "object" ? data.npu : null,
     sys: data.sys,
+    current_user: typeof data.current_user === "string" ? data.current_user : undefined,
+    can_kill_all: typeof data.can_kill_all === "boolean" ? data.can_kill_all : undefined,
     llm: {
       llama: list("llama"),
       ollama: list("ollama"),
@@ -126,6 +149,20 @@ async function fetchSample(source) {
       throw new Error(`Timed out connecting to ${source.host}:8039`);
     throw new Error(`Could not connect to ${source.host}:8039`);
   }
+}
+async function runProcessAction(action, pid) {
+  const uid = process.getuid?.();
+  if (uid === undefined)
+    throw new Error("Local D-Bus is only available on Linux");
+  const { stdout } = await execFileAsync("busctl", [
+    `--address=unix:path=/run/user/${uid}/bus`,
+    "call",
+    "com.daevid.nvstats",
+    `/com/daevid/nvstats/${action}/${pid}`,
+    "com.daevid.nvstats.Process",
+    action === "kill" ? "Kill" : "Restart"
+  ], { timeout: 15000, maxBuffer: 64 * 1024 });
+  return parseBusctlReply(stdout);
 }
 function localUnavailableReason() {
   if (typeof process.getuid !== "function") {
@@ -274,6 +311,35 @@ var server = http.createServer((req, res) => {
     })();
     return;
   }
+  if (pathname === "/process" && req.method === "POST") {
+    (async () => {
+      try {
+        const body = await readJsonBody(req);
+        const pid = parsePid(body?.pid);
+        const action = body?.action;
+        if (!isProcessAction(action) || pid === null) {
+          send(res, 400, { ok: false, message: "invalid-request" });
+          return;
+        }
+        if (currentSource.mode !== "local") {
+          send(res, 200, { ok: false, message: "Process control needs the Local D-Bus source" });
+          return;
+        }
+        if (!lastSample || !llmProcesses(lastSample.llm).some((p) => p.pid === pid)) {
+          send(res, 200, { ok: false, message: "process not found" });
+          return;
+        }
+        send(res, 200, await runProcessAction(action, pid));
+        tick();
+      } catch (error) {
+        if (res.headersSent)
+          return;
+        const message = error instanceof Error ? error.message.slice(0, 180) : "request failed";
+        send(res, 200, { ok: false, message });
+      }
+    })();
+    return;
+  }
   if (pathname === "/health") {
     send(res, 200, {
       ok: true,
@@ -296,7 +362,8 @@ var server = http.createServer((req, res) => {
       sourceLabel: currentSource.mode === "local" ? "Local D-Bus" : currentSource.label,
       sourceError: sourceAvailable ? null : lastError,
       localSourceAvailable,
-      localSourceReason: localSourceAvailable ? null : localSourceReason
+      localSourceReason: localSourceAvailable ? null : localSourceReason,
+      controlAvailable: currentSource.mode === "local" && sourceAvailable
     };
     send(res, 200, stats);
     return;

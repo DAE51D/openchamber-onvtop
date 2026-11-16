@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.5.0 — 2026-11-16
+
+- Add two-click **Restart** (orange) and **Kill** (red) buttons to model process cards, like knvtop. Local D-Bus source only; the remote HTTP source stays read-only. Kill is shown when nvstats can kill anyone or you own the process; Restart needs a systemd unit (system units need passwordless sudo). The service only acts on pids currently shown on a card.
+
 ## 1.4.0 — 2026-11-15
 
 - Add optional NPU support (AMD XDNA / Ryzen AI): an NPU card, a pink graph line and legend entry, and NPU/GPU labels on model cards. Everything NPU-related is hidden on hosts without an NPU, and shows N/A when an NPU exists but cannot be read. Needs nvstats-service 1.1.0 or newer.

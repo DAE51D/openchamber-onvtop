@@ -23,7 +23,7 @@ Follow the [nvstats-service install skill](https://github.com/DAE51D/nvstats-ser
 
 ## 3. Verify
 
-Confirm the selected source is reachable and onvtop reports live telemetry and displays model cards when supported inference processes are running. Local mode needs `nvstats.service` active for the same user as OpenChamber; remote mode needs nvstats HTTP listening on port 8039. The cards are read-only: do not call nvstats process-control methods or add kill/restart controls.
+Confirm the selected source is reachable and onvtop reports live telemetry and displays model cards when supported inference processes are running. Local mode needs `nvstats.service` active for the same user as OpenChamber; remote mode needs nvstats HTTP listening on port 8039. With the **Local D-Bus** source, process cards show two-click **Restart** and **Kill** buttons (same rules as knvtop: kill if nvstats has passwordless sudo or you own the process; restart needs a systemd unit, and system units need sudo). The remote HTTP source is read-only and shows no buttons, because nvstats-service deliberately exposes no process control over HTTP.
 
 The lightweight Linux matcher covers llama.cpp, Ollama, vLLM, SGLang, and Hugging Face TGI launchers. It does not inspect Docker containers or query desktop-app APIs. Some runtimes expose model-level data but not per-model CPU/GPU process counters; show unavailable fields honestly rather than inferring them. Avoid logging or pasting full process arguments because they can contain credentials.
 

@@ -8,7 +8,7 @@ For those using local LLM, the [original nvtop CLI](https://github.com/syllo/nvt
 
 GPU-focused OpenChamber rail panel and compact Work Status graph, powered by the standalone [nvstats-service](https://github.com/DAE51D/nvstats-service) daemon.
 
-The panel now includes read-only per-model cards for detected local inference processes, with process CPU/GPU/memory metrics and parsed launch flags where available. It does not expose process kill or restart controls.
+The panel includes per-model cards for detected local inference processes, with process CPU/GPU/memory metrics and parsed launch flags where available. With the **Local D-Bus** source, each card also has two-click **Restart** (orange) and **Kill** (red) buttons, like knvtop. Kill appears when nvstats can kill any process or you own it; Restart needs the process to run in a systemd unit (system units need passwordless sudo). The remote HTTP source stays read-only.
 
 The panel shows GPU utilization, shared GTT memory, temperature, power, CPU, system RAM and, on machines with an NPU (AMD XDNA / Ryzen AI), an NPU card. Its graph plots GPU utilization, GTT, temperature, power, CPU and NPU; system RAM is shown separately and is never presented as GPU RAM. Click a graph-backed card or legend label to toggle its line. Visibility preferences are saved and shared with the Work Status graph.
 

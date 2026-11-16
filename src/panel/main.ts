@@ -3,6 +3,7 @@ import { connectHost } from '@openchamber/sdk';
 import { applyHostReady } from '@openchamber/sdk/ui';
 
 import { COLORS } from '../shared/colors.ts';
+import { canKill, canRestart, type ProcessAction } from '../shared/process.ts';
 import { collectLlmCards, displayFlags, engineLabel, type LlmCard } from '../shared/llm.ts';
 import { type HistorySeries, type Sample, type Stats, HISTORY_LENGTH } from '../shared/types.ts';
 import {
@@ -304,6 +305,34 @@ h2 {
 .llm-flag-key { color: var(--oc-muted); }
 .llm-flag-value { color: var(--oc-fg); }
 .llm-empty { color: var(--oc-muted); font-size: 11px; }
+.llm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.llm-actions { display: flex; flex: none; gap: 5px; }
+.llm-actions[hidden] { display: none; }
+.llm-action {
+  padding: 1px 7px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--oc-muted);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--oc-fg) 25%, transparent);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.llm-action[data-action="kill"] { --action-color: #ef4444; }
+.llm-action[data-action="restart"] { --action-color: #f97316; }
+.llm-action[data-action] {
+  color: var(--action-color);
+  border-color: var(--action-color);
+}
+.llm-action[data-action]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--action-color) 18%, transparent);
+}
+.llm-action:disabled { opacity: 0.5; cursor: default; }
+.llm-action[hidden] { display: none; }
+.llm-action.armed { color: #fff; background: var(--action-color); }
+.llm-notice { margin-top: 4px; font-size: 11px; color: #ef4444; overflow-wrap: anywhere; }
+.llm-notice[hidden] { display: none; }
+.llm-notice.ok { color: var(--oc-muted); }
 `;
 
 const style = document.createElement('style');
@@ -883,6 +912,11 @@ type LlmCardView = {
   meta: HTMLElement;
   flags: HTMLElement;
   flagsSignature: string;
+  actions: HTMLElement;
+  notice: HTMLElement;
+  killButton: HTMLButtonElement;
+  restartButton: HTMLButtonElement;
+  pid: number;
 };
 
 const llmCardViews = new Map<string, LlmCardView>();
@@ -901,19 +935,99 @@ const processPercent = (value: number | null | undefined): string =>
 const processMiB = (value: number | null | undefined): string =>
   value === null || value === undefined ? 'N/A' : `${(value / 1024).toFixed(0)} MiB`;
 
+// Two-click button: first click arms it (label changes), second click within 3 s fires.
+function makeConfirmButton(action: ProcessAction, label: string, armedLabel: string, onConfirm: () => void): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'llm-action';
+  button.dataset.action = action;
+  button.textContent = label;
+  let timer = 0;
+  const disarm = () => {
+    window.clearTimeout(timer);
+    button.classList.remove('armed');
+    button.textContent = label;
+  };
+  button.addEventListener('click', () => {
+    if (button.classList.contains('armed')) {
+      disarm();
+      onConfirm();
+      return;
+    }
+    button.classList.add('armed');
+    button.textContent = armedLabel;
+    timer = window.setTimeout(disarm, 3000);
+  });
+  button.addEventListener('blur', disarm);
+  return button;
+}
+
 function makeLlmCardView(): LlmCardView {
   const element = document.createElement('article');
   element.className = 'llm-card';
+  const head = document.createElement('div');
+  head.className = 'llm-head';
   const title = document.createElement('div');
   title.className = 'llm-title';
+  const actions = document.createElement('div');
+  actions.className = 'llm-actions';
   const stats = document.createElement('div');
   stats.className = 'llm-stats';
   const meta = document.createElement('div');
   meta.className = 'llm-meta';
   const flags = document.createElement('div');
   flags.className = 'llm-flags';
-  element.append(title, stats, meta, flags);
-  return { element, title, stats, meta, flags, flagsSignature: '' };
+  const notice = document.createElement('div');
+  notice.className = 'llm-notice';
+  notice.hidden = true;
+  const restartButton = makeConfirmButton('restart', 'Restart', 'Restart? Click', () => void runProcessAction(view, 'restart'));
+  const killButton = makeConfirmButton('kill', 'Kill', 'Kill? Click', () => void runProcessAction(view, 'kill'));
+  const view: LlmCardView = {
+    element, title, stats, meta, flags, flagsSignature: '',
+    actions, notice, killButton, restartButton, pid: 0,
+  };
+  actions.append(restartButton, killButton);
+  actions.hidden = true;
+  head.append(title, actions);
+  element.append(head, stats, meta, flags, notice);
+  return view;
+}
+
+let noticeTimer = new WeakMap<HTMLElement, number>();
+function showNotice(view: LlmCardView, message: string, ok: boolean): void {
+  view.notice.textContent = message;
+  view.notice.classList.toggle('ok', ok);
+  view.notice.hidden = false;
+  window.clearTimeout(noticeTimer.get(view.notice));
+  noticeTimer.set(view.notice, window.setTimeout(() => { view.notice.hidden = true; }, ok ? 4000 : 8000));
+}
+
+async function runProcessAction(view: LlmCardView, action: ProcessAction): Promise<void> {
+  const pid = view.pid;
+  if (!(pid > 1)) return;
+  view.killButton.disabled = true;
+  view.restartButton.disabled = true;
+  showNotice(view, action === 'kill' ? 'Killing…' : 'Restarting…', true);
+  try {
+    const result = await host.serviceRequest({
+      method: 'POST',
+      path: '/process',
+      body: JSON.stringify({ action, pid }),
+    });
+    if (result.status === 404) throw new Error('Onvtop service is outdated. Restart OpenChamber.');
+    const body = JSON.parse(result.body) as { ok?: boolean; message?: string };
+    if (body.ok) {
+      showNotice(view, body.message || (action === 'kill' ? 'Killed' : 'Restart queued'), true);
+    } else {
+      showNotice(view, `${action} failed: ${body.message || `HTTP ${result.status}`}`, false);
+    }
+  } catch (error) {
+    showNotice(view, `${action} failed: ${error instanceof Error ? error.message : 'request failed'}`, false);
+  } finally {
+    view.killButton.disabled = false;
+    view.restartButton.disabled = false;
+    void poll();
+  }
 }
 
 const onNpu = (card: LlmCard): boolean =>
@@ -942,8 +1056,16 @@ function cardMeta(card: LlmCard): string {
   ].filter(Boolean).join('   ·   ');
 }
 
-function updateLlmCard(view: LlmCardView, card: LlmCard): void {
+function updateLlmCard(view: LlmCardView, card: LlmCard, stats: Stats): void {
   view.element.style.setProperty('--engine-color', ENGINE_COLORS[card.engine]);
+  // Kill/restart only for real processes, only when the source accepts control.
+  const proc = card.process;
+  view.pid = proc?.pid ?? 0;
+  const killable = !!proc && stats.controlAvailable && canKill(stats.sample, proc);
+  const restartable = !!proc && stats.controlAvailable && canRestart(stats.sample, proc);
+  view.killButton.hidden = !killable;
+  view.restartButton.hidden = !restartable;
+  view.actions.hidden = !killable && !restartable;
   view.title.textContent = `${engineLabel(card.engine)}  [${card.title}]`;
 
   if (card.process) {
@@ -979,8 +1101,8 @@ function updateLlmCard(view: LlmCardView, card: LlmCard): void {
   }
 }
 
-function updateLlmCards(llm: Sample['llm']): void {
-  const cards = collectLlmCards(llm);
+function updateLlmCards(stats: Stats): void {
+  const cards = collectLlmCards(stats.sample.llm);
   llmSection.hidden = cards.length === 0;
   const activeKeys = new Set(cards.map(({ key }) => key));
 
@@ -996,7 +1118,7 @@ function updateLlmCards(llm: Sample['llm']): void {
       view = makeLlmCardView();
       llmCardViews.set(card.key, view);
     }
-    updateLlmCard(view, card);
+    updateLlmCard(view, card, stats);
     const childAtIndex = llmList.children.item(index);
     if (childAtIndex !== view.element) llmList.insertBefore(view.element, childAtIndex);
   });
@@ -1032,7 +1154,7 @@ function updateUI(stats: Stats): void {
   for (const el of [statNpu, ...Array.from(root!.querySelectorAll<HTMLElement>('.legend-item[data-series="npu"]'))]) {
     el.style.display = npuPresent ? '' : 'none';
   }
-  updateLlmCards(stats.sample.llm);
+  updateLlmCards(stats);
 
   if (typeof stats.localSourceAvailable === 'boolean') {
     const available = stats.localSourceAvailable;

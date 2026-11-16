@@ -51,6 +51,7 @@ export type LlmProcess = {
   rss_kb?: number | null;
   threads?: number | null;
   type?: string[];
+  unit?: string | null; // "system:x.service" / "user:x.service"; null when not in a restartable unit
 };
 
 export type OllamaModel = {
@@ -77,6 +78,9 @@ export type Sample = {
   npu?: NpuSample | null;
   sys: SysSample;
   llm: LlmSample;
+  // Local D-Bus samples only; absent over HTTP (read-only).
+  current_user?: string;
+  can_kill_all?: boolean;
 };
 
 export type HistorySeries = {
@@ -98,6 +102,8 @@ export type Stats = {
   sourceError: string | null;
   localSourceAvailable: boolean;
   localSourceReason: string | null;
+  // True when kill/restart can be sent to the selected source (local D-Bus).
+  controlAvailable: boolean;
 };
 
 export const HISTORY_LENGTH = 21; // match knvtop's 21-point graph window

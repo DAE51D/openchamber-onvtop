@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 
 import { type HistorySeries, type Sample, type Stats, HISTORY_POINTS, SAMPLE_INTERVAL_MS } from '../shared/types.ts';
 import { percentOf, powerPercent } from '../shared/series.ts';
+import { isProcessAction, llmProcesses, parseBusctlReply, parsePid, type ProcessAction, type ProcessResult } from '../shared/process.ts';
 import { normalizeRemoteHost, remoteSampleUrl, sameServiceSource, type ServiceSource } from '../shared/sources.ts';
 
 const execFileAsync = promisify(execFile);
@@ -62,6 +63,8 @@ function normalizeSample(value: unknown): Sample {
     gpu: data.gpu,
     npu: data.npu && typeof data.npu === 'object' ? data.npu : null,
     sys: data.sys,
+    current_user: typeof data.current_user === 'string' ? data.current_user : undefined,
+    can_kill_all: typeof data.can_kill_all === 'boolean' ? data.can_kill_all : undefined,
     llm: {
       llama: list('llama'),
       ollama: list('ollama'),
@@ -104,6 +107,23 @@ async function fetchSample(source: ServiceSource): Promise<Sample> {
     if (error instanceof Error && error.name === 'TimeoutError') throw new Error(`Timed out connecting to ${source.host}:8039`);
     throw new Error(`Could not connect to ${source.host}:8039`);
   }
+}
+
+// The PID rides in the object path, exactly like knvtop: Kill()/Restart() take no
+// arguments and nvstats-service re-validates the pid (and re-resolves the owning
+// systemd unit itself; a unit name is never accepted from a client).
+async function runProcessAction(action: ProcessAction, pid: number): Promise<ProcessResult> {
+  const uid = process.getuid?.();
+  if (uid === undefined) throw new Error('Local D-Bus is only available on Linux');
+  const { stdout } = await execFileAsync('busctl', [
+    `--address=unix:path=/run/user/${uid}/bus`,
+    'call',
+    'com.daevid.nvstats',
+    `/com/daevid/nvstats/${action}/${pid}`,
+    'com.daevid.nvstats.Process',
+    action === 'kill' ? 'Kill' : 'Restart',
+  ], { timeout: 15_000, maxBuffer: 64 * 1024 });
+  return parseBusctlReply(stdout);
 }
 
 function localUnavailableReason(): string {
@@ -250,6 +270,35 @@ const server = http.createServer((req, res) => {
     })();
     return;
   }
+  if (pathname === '/process' && req.method === 'POST') {
+    void (async () => {
+      try {
+        const body = await readJsonBody(req) as Record<string, unknown>;
+        const pid = parsePid(body?.pid);
+        const action = body?.action;
+        if (!isProcessAction(action) || pid === null) {
+          send(res, 400, { ok: false, message: 'invalid-request' });
+          return;
+        }
+        if (currentSource.mode !== 'local') {
+          send(res, 200, { ok: false, message: 'Process control needs the Local D-Bus source' });
+          return;
+        }
+        // Only act on pids the user can currently see on a card.
+        if (!lastSample || !llmProcesses(lastSample.llm).some((p) => p.pid === pid)) {
+          send(res, 200, { ok: false, message: 'process not found' });
+          return;
+        }
+        send(res, 200, await runProcessAction(action, pid));
+        void tick();
+      } catch (error) {
+        if (res.headersSent) return;
+        const message = error instanceof Error ? error.message.slice(0, 180) : 'request failed';
+        send(res, 200, { ok: false, message });
+      }
+    })();
+    return;
+  }
   if (pathname === '/health') {
     // OpenChamber uses /health only to determine whether this local extension
     // service has started. Telemetry may be unavailable until the panel applies
@@ -276,6 +325,7 @@ const server = http.createServer((req, res) => {
       sourceError: sourceAvailable ? null : lastError,
       localSourceAvailable,
       localSourceReason: localSourceAvailable ? null : localSourceReason,
+      controlAvailable: currentSource.mode === 'local' && sourceAvailable,
     };
     send(res, 200, stats);
     return;
